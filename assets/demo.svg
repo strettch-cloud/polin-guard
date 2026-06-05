@@ -8,7 +8,7 @@
   <text x="430" y="22" text-anchor="middle" fill="#8b949e" font-size="12">polin-guard — pre-commit</text>
 
   <g xml:space="preserve">
-    <text x="20" y="66"><tspan fill="#8b949e">strettch-cloud-website </tspan><tspan fill="#58a6ff">(main)</tspan><tspan fill="#8b949e"> $ </tspan><tspan fill="#c9d1d9">git commit -m "fix: tweak config"</tspan></text>
+    <text x="20" y="66"><tspan fill="#8b949e">web-app </tspan><tspan fill="#58a6ff">(main)</tspan><tspan fill="#8b949e"> $ </tspan><tspan fill="#c9d1d9">git commit -m "fix: tweak config"</tspan></text>
 
     <text x="20" y="100" fill="#ff7b72" font-weight="bold">✖ polin-guard: potential code injection detected</text>
 
@@ -26,7 +26,7 @@
     <text x="20" y="290" fill="#f85149" font-weight="bold">Commit blocked.</text>
     <text x="20" y="314" fill="#3fb950">→ The injected payload never entered the repository. ✓</text>
 
-    <text x="20" y="352"><tspan fill="#8b949e">strettch-cloud-website </tspan><tspan fill="#58a6ff">(main)</tspan><tspan fill="#8b949e"> $ </tspan><tspan fill="#c9d1d9">git commit -m "fix: tweak config"  </tspan><tspan fill="#6e7681"># after removing the line</tspan></text>
+    <text x="20" y="352"><tspan fill="#8b949e">web-app </tspan><tspan fill="#58a6ff">(main)</tspan><tspan fill="#8b949e"> $ </tspan><tspan fill="#c9d1d9">git commit -m "fix: tweak config"  </tspan><tspan fill="#6e7681"># after removing the line</tspan></text>
     <text x="20" y="380"><tspan fill="#3fb950">✓ polin-guard: no injection indicators found</tspan><tspan fill="#8b949e"> (18 files scanned)</tspan></text>
     <text x="20" y="404"><tspan fill="#8b949e">[main 9f2c1a0] fix: tweak config</tspan></text>
   </g>
