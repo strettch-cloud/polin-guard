@@ -93,7 +93,8 @@ function main() {
       const tag = it.severity === 'critical'
         ? paint('CRITICAL', '1;31', c)
         : paint('warning ', '33', c);
-      process.stderr.write(`  ${tag} ${file}:${it.line}  [${it.ruleId}]\n            ${it.message}\n`);
+      const loc = it.line === 0 ? `${file} (file-level)` : `${file}:${it.line}`;
+      process.stderr.write(`  ${tag} ${loc}  [${it.ruleId}]\n            ${it.message}\n`);
     }
     process.stderr.write('\n');
   }

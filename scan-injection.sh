@@ -73,6 +73,15 @@ scan_one() {
       if (line ~ /\][ \t]*=[ \t]*require[ \t]*;/ && line ~ /typeof[ \t]+module/) crit=crit "require-reexposed ";
       if (line ~ /String\.fromCharCode\([ \t]*127[ \t]*\)/) crit=crit "fromCharCode127 ";
 
+      # concealment: code hidden after a long mid-line whitespace gap (off-screen
+      # trick). Technique-invariant — catches renamed/signature-free payloads too.
+      body=line; sub(/^[ \t]+/, "", body);
+      if (body ~ /[^ \t][ \t]{80,}[^ \t]/) crit=crit "concealment ";
+
+      # long unbroken token (encoded blob), token-agnostic
+      maxtok=0; ntok=split(body, toks, /[ \t]+/); for (ti=1; ti<=ntok; ti++) if (length(toks[ti])>maxtok) maxtok=length(toks[ti]);
+      if (maxtok >= 120) crit=crit "long-token(" maxtok ") ";
+
       # dense escape blob
       tmp=line; n=gsub(/\\x[0-9a-fA-F][0-9a-fA-F]|\\u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]/, "", tmp);
       if (n >= maxesc) crit=crit "escape-density(" n ") ";
@@ -80,13 +89,11 @@ scan_one() {
       # immediately-invoked Function ctor on a long line
       if (length(line) > 200 && line ~ /Function[ \t]*\([^)]*\)[ \t]*\(/) crit=crit "iife-ctor ";
 
-      # oversized line, critical if it also has exec/require tokens
-      if (length(line) > maxlen) {
-        if (line ~ /require|eval|atob|child_process|Function|process\.env|global[ \t]*\[|String\.fromCharCode/)
-          crit=crit "oversized-exec(" length(line) ") ";
-        else
-          crit=crit "oversized(" length(line) ") ";
-      }
+      # oversized line: only blocking when it ALSO carries exec/require tokens
+      # (a lone long line is a warning in the full engine, not a block — avoids
+      # false positives on legitimate long data lines).
+      if (length(line) > maxlen && line ~ /require|eval|atob|child_process|Function|process\.env|global[ \t]*\[|String\.fromCharCode/)
+        crit=crit "oversized-exec(" length(line) ") ";
 
       if (crit != "") {
         printf("  CRITICAL %s:%d  [%s]\n", file, NR, crit);

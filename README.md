@@ -46,23 +46,40 @@ executes silently and automatically.
 > Built after a real incident in which this exact payload was committed across
 > multiple repositories and reached production branches.
 
-## What it detects
+## How it detects (beyond signatures)
 
-| Rule | Severity | Catches |
-|------|----------|---------|
-| `global-bang-key` | 🔴 critical | `global['!']=…` stager marker |
-| `global-underscore-handle` | 🔴 critical | `global[_$_…]=…` obfuscated handle |
-| `require-reexposed` | 🔴 critical | `…]=require; … typeof module` capability escalation |
-| `char-shuffle-cipher` | 🔴 critical | `String.fromCharCode(127)` cipher delimiter |
-| `escape-density` | 🔴 critical | a line with ≥25 `\xNN`/`\uNNNN` escapes (obfuscated blob) |
-| `iife-constructor` | 🔴 critical | immediately-invoked `Function()` on a long line |
-| `oversized-line` | 🔴 critical\* | a source line > 1000 chars **with** exec/require tokens |
-| `oversized-line` | 🟡 warning | a long line *without* exec tokens (review) |
-| `eval` / `atob` / `child_process` | 🟡 warning | weaker indicators |
+polin-guard doesn't just match known payload strings — those are trivially
+renamed. It detects the **necessary conditions** of the attack and combines
+independent signals into a weighted **risk score**. To stay hidden *and* execute
+at build time, a payload is forced to do several of these at once:
 
-\* Tuned for **high precision**: a lone long line is only a *warning*. It takes a
-unique signature or exec tokens to **block** a commit, so it won't cry wolf.
-Lockfiles, minified bundles, source maps, and `node_modules` are skipped automatically.
+| Signal | What it catches | Weight |
+|--------|-----------------|-------:|
+| `concealment` | code hidden after a long mid-line whitespace gap (the off-screen trick) | 80 |
+| `signature` | known-family markers (`global['!']`, `global[_$_…]`, re-exposed `require`, `fromCharCode(127)`) | 60 |
+| `escape-density` | ≥25 `\xNN`/`\uNNNN` escapes on a line (obfuscated blob) | 50 |
+| `exec-sink` | dynamic execution: `Function()` / `eval` | 40 |
+| `long-token` | unbroken ≥120-char token (encoded blob) | 35 |
+| `ctor-chain` | `constructor.constructor` reach to `Function` | 35 |
+| `oversized-line` | line > 1000 chars (+30 more if it carries exec/require tokens) | 25 |
+| `entropy` | long, high-entropy line | 25 |
+| `indirect-require` · `dyn-timer` · `vm-module` | `require(<var>)`, `setTimeout("…")`, `require('vm')` | 25 |
+| `net-exec-combo` | network **+** code-exec/file-write together (runtime-fetched payload) | 30 |
+| `network` · `capability` | `fetch`/`http(s)`, or `process.env`/`fs`/`child_process` | 15 / 10 |
+| `autoloaded-context` | the above inside an auto-loaded config/entry file | +20 |
+
+A **file-level pass** also aggregates across lines, so a payload **split across
+many lines** or **fetched at runtime** still trips the score.
+
+**Block at score ≥ 70, warn at ≥ 35** (configurable). Because the signals are
+independent, evading one (rename, split, runtime-fetch, drop the padding) still
+trips the others — so evasion becomes self-defeating: visible in review, inert,
+readable, or capability-less. Lockfiles, minified bundles, source maps, and
+`node_modules` are skipped to keep false positives near zero.
+
+> **Evasion-tested.** The suite proves that a **renamed** (signature-free),
+> **split-across-lines**, and **runtime-fetched** payload are all still blocked,
+> while legitimate long-data lines and ordinary dynamic `require()` are not.
 
 ## Quick start
 
