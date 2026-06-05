@@ -123,19 +123,47 @@ Drop [`scan-injection.sh`](scan-injection.sh) into your repo (works with the
 ## Usage
 
 ```text
-polin-guard [options] [paths...]
+polin-guard [scan] [options] [paths...]   Scan files for injected payloads (default)
+polin-guard install-audit [--strict]      Audit dependencies for supply-chain risk
+polin-guard harden [--fix]                Check/enable install-time hardening
 
+Scan options:
   --staged     Scan staged content (default; for pre-commit hooks; covers --amend)
   --all        Scan all git-tracked files
   --ci         Alias for --all (use in CI)
   [paths...]   Scan specific files (no git required)
   --strict     Treat warnings as blocking too
-  --quiet      Only print on findings
-  -h, --help   Show help
-  -v, --version
+  -h, --help   ·   -v, --version
 
 Exit 0 = clean · 1 = blocking finding · 2 = usage error
 ```
+
+## Supply-chain audit (root-cause defense)
+
+The scanner catches a payload that's already in your tree. **`install-audit`
+attacks the entry point** — the malicious dependency that runs code at
+`npm install`/build time — without installing anything:
+
+```bash
+npx polin-guard install-audit
+```
+
+It flags, by reading `package.json` and your lockfile:
+
+- 🔴 **malicious lifecycle scripts** — `postinstall`/`prepare`/… that pipe the
+  network to a shell, `eval`, `node -e`, base64, raw-IP URLs, `child_process`
+- 🔴 **non-default registry** resolutions in the lockfile (registry hijack)
+- 🔴 **typosquat / homoglyph** dependency names (one edit away from popular packages)
+- 🟡 **non-registry sources** (git/http/tarball/file) dependencies
+- ℹ️ a **count of packages that declare install/build scripts** — your real attack surface
+
+Then **shut the door** so dependency scripts can't execute at all:
+
+```bash
+npx polin-guard harden --fix     # writes ignore-scripts=true to .npmrc
+```
+
+Run `install-audit` in CI too — see [`examples/github-action.yml`](examples/github-action.yml).
 
 ## Configuration
 

@@ -28,6 +28,9 @@ jobs:
         with:
           node-version: 20
 
-      # Pin a version (or a commit SHA) once published, e.g. polin-guard@0.1.0
+      # Pin a version (or a commit SHA) once published, e.g. polin-guard@0.3.0
       - name: Scan all tracked files for injected payloads
         run: npx --yes polin-guard@latest --ci
+
+      - name: Audit dependencies for supply-chain risk
+        run: npx --yes polin-guard@latest install-audit
