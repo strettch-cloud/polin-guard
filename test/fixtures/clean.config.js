@@ -1,4 +1,4 @@
-// A normal, clean config file. inject-guard must NOT flag anything here.
+// A normal, clean config file. polin-guard must NOT flag anything here.
 const tailwindcssAnimate = require('tailwindcss-animate');
 
 module.exports = {

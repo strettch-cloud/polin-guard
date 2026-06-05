@@ -3,13 +3,13 @@
 #
 # This points at the standalone POSIX scanner (scan-injection.sh) so it works
 # without Node. For the Node version, use the husky hook or a local hook that
-# calls `inject-guard --staged`.
+# calls `polin-guard --staged`.
 
 repos:
   - repo: local
     hooks:
-      - id: inject-guard
-        name: inject-guard (block hidden injected payloads)
+      - id: polin-guard
+        name: polin-guard (block hidden injected payloads)
         entry: ./scan-injection.sh --staged
         language: script
         pass_filenames: false

@@ -1,8 +1,8 @@
-# inject-guard
+# polin-guard
 
 **Block obfuscated build/commit-time code-injection payloads before they ever enter your repo.**
 
-`inject-guard` is a tiny, **zero-dependency** scanner that catches the family of
+`polin-guard` is a tiny, **zero-dependency** scanner that catches the family of
 malicious JavaScript "stagers" that hide a payload on a single, space-padded line
 inside an otherwise normal config or entry file — e.g. `tailwind.config.js`,
 `ecosystem.config.js`, `.eslintrc.js`, `postcss.config.js`, or `src/index.ts`.
@@ -16,7 +16,7 @@ These payloads typically:
 …all of which runs **automatically at build/dev/CI time** with full Node.js
 access to your environment variables, SSH keys, and tokens. Because the malicious
 code sits hundreds of spaces to the right of legitimate code, it is trivially
-missed in review. `inject-guard` makes it impossible to miss.
+missed in review. `polin-guard` makes it impossible to miss.
 
 > Built after a real incident in which this exact payload was committed across
 > multiple repositories. The detection rules are tuned for **high precision** —
@@ -43,13 +43,13 @@ Lockfiles, minified bundles, source maps, and `node_modules` are excluded automa
 ## Install
 
 ```bash
-npm install --save-dev inject-guard
+npm install --save-dev polin-guard
 ```
 
 Or run it without installing:
 
 ```bash
-npx inject-guard --all
+npx polin-guard --all
 ```
 
 No Node? Use the standalone script — copy `scan-injection.sh` into your repo.
@@ -57,11 +57,11 @@ No Node? Use the standalone script — copy `scan-injection.sh` into your repo.
 ## Usage
 
 ```bash
-inject-guard --staged    # scan staged content (use in pre-commit; also covers `git commit --amend`)
-inject-guard --all       # scan every tracked file
-inject-guard --ci        # same as --all, for CI
-inject-guard path/to/file.js ...   # scan specific files (no git required)
-inject-guard --strict    # treat warnings as blocking too
+polin-guard --staged    # scan staged content (use in pre-commit; also covers `git commit --amend`)
+polin-guard --all       # scan every tracked file
+polin-guard --ci        # same as --all, for CI
+polin-guard path/to/file.js ...   # scan specific files (no git required)
+polin-guard --strict    # treat warnings as blocking too
 ```
 
 Exit code `1` means a blocking finding was detected.
@@ -69,10 +69,10 @@ Exit code `1` means a blocking finding was detected.
 ### As a pre-commit hook (husky)
 
 ```bash
-npm install --save-dev inject-guard husky
+npm install --save-dev polin-guard husky
 npx husky init
 # add the scan to the hook (runs on commit AND amend):
-echo 'npx --no-install inject-guard --staged' > .husky/pre-commit
+echo 'npx --no-install polin-guard --staged' > .husky/pre-commit
 ```
 
 A ready-made hook is included at `.husky/pre-commit` in this package.
@@ -88,11 +88,11 @@ A local hook can be skipped with `git commit --no-verify` or sidestepped by a
 force-push from a compromised machine. Add the server-side scan so history is
 always re-checked:
 
-Copy `examples/github-action.yml` to `.github/workflows/inject-guard.yml`.
+Copy `examples/github-action.yml` to `.github/workflows/polin-guard.yml`.
 
 ## Configuration
 
-Optional `.injectguardrc.json` in your repo root:
+Optional `.polinguardrc.json` in your repo root:
 
 ```json
 {
@@ -107,9 +107,9 @@ Optional `.injectguardrc.json` in your repo root:
 
 If a line is genuinely legitimate (a real minified-in-source blob, say):
 
-- put `// injectguard-allow-line` on the same line, **or**
-- put `// injectguard-allow-next-line` on the line above it, **or**
-- raise `maxLineLength` / exclude the path in `.injectguardrc.json`.
+- put `// polinguard-allow-line` on the same line, **or**
+- put `// polinguard-allow-next-line` on the line above it, **or**
+- raise `maxLineLength` / exclude the path in `.polinguardrc.json`.
 
 Never use `git commit --no-verify` to push past a finding you haven't understood.
 
@@ -118,7 +118,7 @@ Never use `git commit --no-verify` to push past a finding you haven't understood
 One-off scan of a checked-out repo:
 
 ```bash
-npx inject-guard --all
+npx polin-guard --all
 # or, without Node:
 git grep -nI '.\{1000,\}'   # flag any suspiciously long line
 ```
@@ -131,7 +131,7 @@ for r in $(gh repo list YOUR_ORG --limit 200 --json name --jq '.[].name'); do
   ( cd "/tmp/scan/$r"
     for b in $(git branch -r | grep -v HEAD | sed 's# *origin/##'); do
       git checkout -q "$b" 2>/dev/null || continue
-      npx --yes inject-guard --all || echo "FOUND in $r @ $b"
+      npx --yes polin-guard --all || echo "FOUND in $r @ $b"
     done )
 done
 ```

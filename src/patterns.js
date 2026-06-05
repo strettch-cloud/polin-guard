@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Detection rules for inject-guard.
+ * Detection rules for polin-guard.
  *
  * These target the family of obfuscated build/commit-time JavaScript "stagers"
  * that hide a payload on a single, heavily space-padded line inside an otherwise
@@ -15,7 +15,7 @@
  * false positive, so it is safe to BLOCK a commit on it.
  */
 
-// Default thresholds (override via .injectguardrc.json).
+// Default thresholds (override via .polinguardrc.json).
 const DEFAULTS = {
   maxLineLength: 1000, // a single source line longer than this is suspicious
   maxEscapes: 25, // count of \xNN / \uNNNN escapes on one line => obfuscated blob

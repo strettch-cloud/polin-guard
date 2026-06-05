@@ -3,10 +3,10 @@
 
 const { run } = require('../src/scan');
 
-const HELP = `inject-guard — block obfuscated code-injection payloads before they are committed
+const HELP = `polin-guard — block obfuscated code-injection payloads before they are committed
 
 Usage:
-  inject-guard [options] [paths...]
+  polin-guard [options] [paths...]
 
 Modes:
   --staged        Scan files staged for commit (default; use in pre-commit hooks).
@@ -26,7 +26,7 @@ Exit codes:
   1  blocking finding(s) detected
   2  usage / runtime error
 
-Docs & allowlisting: see README. Add a config via .injectguardrc.json.`;
+Docs & allowlisting: see README. Add a config via .polinguardrc.json.`;
 
 function parseArgs(argv) {
   const o = { mode: 'staged', paths: [], strict: false, quiet: false, color: true };
@@ -58,27 +58,27 @@ function main() {
     try { process.stdout.write(require('../package.json').version + '\n'); } catch { process.stdout.write('0.0.0\n'); }
     return 0;
   }
-  if (o.unknown) { process.stderr.write(`inject-guard: unknown option ${o.unknown}\n`); return 2; }
+  if (o.unknown) { process.stderr.write(`polin-guard: unknown option ${o.unknown}\n`); return 2; }
 
   let res;
   try {
     res = run({ mode: o.mode, paths: o.paths, strict: o.strict });
   } catch (e) {
-    process.stderr.write(`inject-guard: ${e.message}\n`);
+    process.stderr.write(`polin-guard: ${e.message}\n`);
     return 2;
   }
 
   if (res.findings.length === 0) {
     if (!o.quiet) {
-      process.stdout.write(paint('✓ inject-guard: no injection indicators found', '32', c) +
+      process.stdout.write(paint('✓ polin-guard: no injection indicators found', '32', c) +
         ` (${res.filesScanned} file${res.filesScanned === 1 ? '' : 's'} scanned)\n`);
     }
     return 0;
   }
 
   const header = res.blocking
-    ? paint('✖ inject-guard: potential code injection detected', '1;31', c)
-    : paint('⚠ inject-guard: review-worthy findings', '33', c);
+    ? paint('✖ polin-guard: potential code injection detected', '1;31', c)
+    : paint('⚠ polin-guard: review-worthy findings', '33', c);
   process.stderr.write(`\n${header}\n\n`);
 
   // Group findings by file.
@@ -102,8 +102,8 @@ function main() {
     process.stderr.write(
       'Commit blocked. If this is a genuine attack, do NOT commit — investigate the file.\n' +
       'If this is a verified false positive, acknowledge the line with a\n' +
-      `"// injectguard-allow-line" comment, an "injectguard-allow-next-line" comment above it,\n` +
-      'or adjust .injectguardrc.json. (Bypass for one commit: git commit --no-verify.)\n'
+      `"// polinguard-allow-line" comment, an "polinguard-allow-next-line" comment above it,\n` +
+      'or adjust .polinguardrc.json. (Bypass for one commit: git commit --no-verify.)\n'
     );
     return 1;
   }

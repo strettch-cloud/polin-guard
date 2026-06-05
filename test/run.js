@@ -32,12 +32,12 @@ check('detects iife-constructor', malFindings.some((f) => f.ruleId === 'iife-con
 
 // 3) Allow markers suppress findings.
 const allowed =
-  '// injectguard-allow-next-line\n' +
+  '// polinguard-allow-next-line\n' +
   'module.exports={};' + ' '.repeat(1100) + 'var x=require("fs");\n';
 check('allow-next-line suppresses finding', scanContent('a.js', allowed, cfg).length === 0);
 
 const allowedInline =
-  'module.exports={};' + ' '.repeat(1100) + 'var x=require("fs"); // injectguard-allow-line\n';
+  'module.exports={};' + ' '.repeat(1100) + 'var x=require("fs"); // polinguard-allow-line\n';
 check('allow-line inline suppresses finding', scanContent('b.js', allowedInline, cfg).length === 0);
 
 // 4) A short, ordinary require() must NOT trip the scanner.

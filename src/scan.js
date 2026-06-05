@@ -11,12 +11,12 @@ const {
   SOFT_INDICATORS,
 } = require('./patterns');
 
-const ALLOW_LINE_MARKER = 'injectguard-allow-next-line';
-const ALLOW_INLINE_MARKER = 'injectguard-allow-line';
+const ALLOW_LINE_MARKER = 'polinguard-allow-next-line';
+const ALLOW_INLINE_MARKER = 'polinguard-allow-line';
 
 /** Load optional config file from the repo root or cwd. */
 function loadConfig(cwd) {
-  const candidates = ['.injectguardrc.json', '.injectguard.json'];
+  const candidates = ['.polinguardrc.json', '.polinguard.json'];
   for (const name of candidates) {
     const p = path.join(cwd, name);
     try {
@@ -25,7 +25,7 @@ function loadConfig(cwd) {
         return { ...DEFAULTS, ...user };
       }
     } catch (e) {
-      process.stderr.write(`inject-guard: ignoring invalid ${name}: ${e.message}\n`);
+      process.stderr.write(`polin-guard: ignoring invalid ${name}: ${e.message}\n`);
     }
   }
   return { ...DEFAULTS };

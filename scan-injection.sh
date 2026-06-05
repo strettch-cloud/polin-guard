@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# inject-guard standalone scanner (no Node required).
+# polin-guard standalone scanner (no Node required).
 # Detects obfuscated hidden-line code-injection payloads in source/config files.
 #
 # Usage:
@@ -15,8 +15,8 @@
 
 set -u
 
-MAX_LINE_LENGTH="${INJECTGUARD_MAX_LINE:-1000}"
-MAX_ESCAPES="${INJECTGUARD_MAX_ESCAPES:-25}"
+MAX_LINE_LENGTH="${POLINGUARD_MAX_LINE:-1000}"
+MAX_ESCAPES="${POLINGUARD_MAX_ESCAPES:-25}"
 MODE="staged"
 FILES=()
 
@@ -25,7 +25,7 @@ case "${1:-}" in
   --all|--ci) MODE="all" ;;
   -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   "" ) MODE="staged" ;;
-  -* ) echo "inject-guard: unknown option $1" >&2; exit 2 ;;
+  -* ) echo "polin-guard: unknown option $1" >&2; exit 2 ;;
   * ) MODE="paths"; FILES=("$@") ;;
 esac
 
@@ -62,9 +62,9 @@ scan_one() {
     {
       crit="";
       line=$0;
-      if (index(line, "injectguard-allow-line") > 0) next;
+      if (index(line, "polinguard-allow-line") > 0) next;
       if (prev_allow == 1) { prev_allow=0; next; }
-      prev_allow = (index(line, "injectguard-allow-next-line") > 0) ? 1 : 0;
+      prev_allow = (index(line, "polinguard-allow-next-line") > 0) ? 1 : 0;
       if (prev_allow == 1) next;
 
       # near-unique signatures
@@ -105,7 +105,7 @@ while IFS= read -r f; do
   if [ -n "$out" ]; then
     if [ "$HEADER_PRINTED" -eq 0 ]; then
       echo "" >&2
-      echo "X inject-guard: potential code injection detected" >&2
+      echo "X polin-guard: potential code injection detected" >&2
       echo "" >&2
       HEADER_PRINTED=1
     fi
@@ -117,9 +117,9 @@ done < <(list_files)
 if [ "$FOUND" -eq 1 ]; then
   echo "" >&2
   echo "Commit blocked. Investigate the file(s) above before committing." >&2
-  echo "Acknowledge a verified false positive with an 'injectguard-allow-line' comment." >&2
+  echo "Acknowledge a verified false positive with an 'polinguard-allow-line' comment." >&2
   exit 1
 fi
 
-echo "v inject-guard: no injection indicators found"
+echo "v polin-guard: no injection indicators found"
 exit 0

@@ -1,13 +1,13 @@
-# inject-guard CI scan — the server-side backstop.
+# polin-guard CI scan — the server-side backstop.
 #
 # A pre-commit hook can be bypassed with `git commit --no-verify` or by a
 # force-push from a compromised machine. This workflow re-scans every push and
 # pull request on the server, where it cannot be skipped — so even amended or
 # force-pushed history is checked before it can be merged.
 #
-# Save as: .github/workflows/inject-guard.yml
+# Save as: .github/workflows/polin-guard.yml
 
-name: inject-guard
+name: polin-guard
 
 on:
   push:
@@ -28,6 +28,6 @@ jobs:
         with:
           node-version: 20
 
-      # Pin a version (or a commit SHA) once published, e.g. inject-guard@0.1.0
+      # Pin a version (or a commit SHA) once published, e.g. polin-guard@0.1.0
       - name: Scan all tracked files for injected payloads
-        run: npx --yes inject-guard@latest --ci
+        run: npx --yes polin-guard@latest --ci

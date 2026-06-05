@@ -1,16 +1,16 @@
 #!/usr/bin/env sh
-# inject-guard pre-commit hook (husky v9+).
+# polin-guard pre-commit hook (husky v9+).
 # Runs on every commit AND on `git commit --amend` (git runs pre-commit for amends).
 # Scans only the staged content that will actually be committed.
 #
 # Copy this file to .husky/pre-commit in your project after installing the package:
-#   npm install --save-dev inject-guard husky
+#   npm install --save-dev polin-guard husky
 #   npx husky init
-#   cp node_modules/inject-guard/.husky/pre-commit .husky/pre-commit
+#   cp node_modules/polin-guard/.husky/pre-commit .husky/pre-commit
 
-npx --no-install inject-guard --staged || {
+npx --no-install polin-guard --staged || {
   echo ""
-  echo "inject-guard blocked this commit (see above)."
+  echo "polin-guard blocked this commit (see above)."
   echo "If you are certain this is a false positive, see the allowlisting notes,"
   echo "or bypass for one commit with:  git commit --no-verify"
   exit 1

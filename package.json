@@ -1,9 +1,9 @@
 {
-  "name": "inject-guard",
+  "name": "polin-guard",
   "version": "0.1.0",
   "description": "Block obfuscated build/commit-time code-injection payloads (hidden long-line JS stagers) before they enter your repo. Zero dependencies. Works as a pre-commit hook, in CI, or standalone.",
   "bin": {
-    "inject-guard": "bin/cli.js"
+    "polin-guard": "bin/cli.js"
   },
   "main": "src/scan.js",
   "type": "commonjs",
@@ -37,6 +37,6 @@
   "dependencies": {},
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/Valentin-Shyaka/polin-guard.git"
   }
 }
