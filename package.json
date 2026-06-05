@@ -1,0 +1,42 @@
+{
+  "name": "inject-guard",
+  "version": "0.1.0",
+  "description": "Block obfuscated build/commit-time code-injection payloads (hidden long-line JS stagers) before they enter your repo. Zero dependencies. Works as a pre-commit hook, in CI, or standalone.",
+  "bin": {
+    "inject-guard": "bin/cli.js"
+  },
+  "main": "src/scan.js",
+  "type": "commonjs",
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run.js",
+    "scan": "node bin/cli.js --all",
+    "scan:staged": "node bin/cli.js --staged"
+  },
+  "keywords": [
+    "security",
+    "supply-chain",
+    "malware",
+    "pre-commit",
+    "husky",
+    "git-hook",
+    "obfuscation",
+    "static-analysis",
+    "injection",
+    "stager"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "license": "MIT",
+  "dependencies": {},
+  "repository": {
+    "type": "git",
+    "url": ""
+  }
+}
