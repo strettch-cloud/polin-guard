@@ -1,0 +1,57 @@
+name: Publish to npm
+
+# Publishing happens ONLY here. Two ways in:
+#   • a GitHub Release  → real publish (OIDC Trusted Publishing + provenance)
+#   • manual dispatch   → dry-run by default (build + pack, no registry write)
+# Either way the job is gated by the `npm-publish` environment (human reviewer)
+# and authenticates to npm via short-lived OIDC — no long-lived NPM token exists.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (build + pack, no real publish)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write          # required for OIDC Trusted Publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-publish # required-reviewer gate (repo Settings → Environments)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Self-scan shipped files (dogfood)
+        # Scope to what actually ships (bin/ + src/). Warnings on the tool's own
+        # detection patterns are non-blocking; a genuine CRITICAL injection still
+        # fails the job. `--all` is NOT used — it trips the intentional malware
+        # test fixtures, which are never published.
+        run: node bin/cli.js src/*.js bin/*.js
+
+      - name: Publish
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "::notice::DRY RUN — packaging only, no registry write"
+            npm publish --dry-run
+          else
+            npm publish --provenance --access public
+          fi
+        # On a real publish: no NODE_AUTH_TOKEN — npm verifies the Trusted
+        # Publisher (strettch-cloud/polin-guard + this workflow) via OIDC.
