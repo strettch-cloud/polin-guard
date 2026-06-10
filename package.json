@@ -1,6 +1,6 @@
 {
   "name": "polin-guard",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Block obfuscated build/commit-time code-injection payloads (hidden long-line JS stagers) before they enter your repo. Zero dependencies. Works as a pre-commit hook, in CI, or standalone.",
   "bin": {
     "polin-guard": "bin/cli.js"
