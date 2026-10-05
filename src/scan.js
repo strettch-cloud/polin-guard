@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { DEFAULTS, WEIGHTS, SIGNATURES, RE } = require('./patterns');
+const { scanArtifacts, isArtifactCandidate } = require('./artifacts');
 
 const ALLOW_LINE_MARKER = 'polinguard-allow-next-line';
 const ALLOW_INLINE_MARKER = 'polinguard-allow-line';
@@ -21,8 +22,8 @@ function loadConfig(cwd) {
   return { ...DEFAULTS };
 }
 
-function git(args, cwd) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 1024 * 1024 * 64 });
+function git(args, cwd, encoding = 'utf8') {
+  return execFileSync('git', args, { cwd, encoding, maxBuffer: 1024 * 1024 * 64 });
 }
 function getStagedFiles(cwd) {
   return git(['diff', '--cached', '--name-only', '--diff-filter=ACMR'], cwd).split('\n').filter(Boolean);
@@ -30,14 +31,15 @@ function getStagedFiles(cwd) {
 function getTrackedFiles(cwd) {
   return git(['ls-files'], cwd).split('\n').filter(Boolean);
 }
-function readStaged(file, cwd) {
-  try { return git(['show', `:${file}`], cwd); } catch { return null; }
+function readStaged(file, cwd, encoding) {
+  try { return git(['show', `:${file}`], cwd, encoding); } catch { return null; }
 }
 
 function isExcluded(file, cfg) {
   const parts = file.split(/[\\/]/);
   if (parts.some((p) => cfg.excludeDirs.includes(p))) return true;
   if (cfg.excludeFilePatterns.some((re) => re.test(file))) return true;
+  if (isArtifactCandidate(file)) return false; // fonts, .llf, VS Code tasks/settings, .gitignore, push tools
   return !cfg.includeExtensions.includes(path.extname(file).toLowerCase());
 }
 
@@ -198,23 +200,30 @@ function run(opts = {}) {
   let files, readFile;
   if (mode === 'paths') {
     files = opts.paths || [];
-    readFile = (f) => { try { return fs.readFileSync(path.resolve(cwd, f), 'utf8'); } catch { return null; } };
+    readFile = (f, enc) => { try { return fs.readFileSync(path.resolve(cwd, f), enc); } catch { return null; } };
   } else if (mode === 'all') {
     files = getTrackedFiles(cwd);
-    readFile = (f) => { try { return fs.readFileSync(path.resolve(cwd, f), 'utf8'); } catch { return null; } };
+    readFile = (f, enc) => { try { return fs.readFileSync(path.resolve(cwd, f), enc); } catch { return null; } };
   } else {
     files = getStagedFiles(cwd);
-    readFile = (f) => readStaged(f, cwd);
+    readFile = (f, enc) => readStaged(f, cwd, enc);
   }
 
   const scanned = [];
   const findings = [];
   for (const file of files) {
     if (isExcluded(file, cfg)) continue;
-    const content = readFile(file);
+    const artifact = isArtifactCandidate(file);
+    const content = readFile(file, artifact ? 'latin1' : 'utf8');
     if (content == null) continue;
     scanned.push(file);
-    findings.push(...scanContent(file, content, cfg));
+    let scanText = true;
+    if (artifact) {
+      const a = scanArtifacts(file, content);
+      findings.push(...a.findings);
+      scanText = a.scanText;
+    }
+    if (scanText) findings.push(...scanContent(file, content, cfg));
   }
 
   const critical = findings.filter((f) => f.severity === 'critical');
@@ -223,4 +232,4 @@ function run(opts = {}) {
   return { filesScanned: scanned.length, findings, critical, warnings, blocking };
 }
 
-module.exports = { run, scanContent, analyzeLine, loadConfig, entropy, isAutoLoaded };
+module.exports = { run, scanContent, scanArtifacts, analyzeLine, loadConfig, entropy, isAutoLoaded };

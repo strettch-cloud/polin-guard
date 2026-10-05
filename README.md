@@ -71,6 +71,15 @@ at build time, a payload is forced to do several of these at once:
 A **file-level pass** also aggregates across lines, so a payload **split across
 many lines** or **fetched at runtime** still trips the score.
 
+**Delivery artifacts** (checked by file type and content, outside the line score; each one blocks):
+
+| Rule | What it catches |
+|------|-----------------|
+| `fake-font` | a file named like a font (`.woff/.woff2/.ttf/.otf/.eot`) whose bytes are not a font header, and any `.llf` file. PolinRider stores its loader as `public/fonts/fa-solid-300.llf` or a text `.woff2`; the content is then line-scored too |
+| `vscode-autorun` | `.vscode/tasks.json` / `.code-workspace` task with `runOn: folderOpen` that runs an interpreter on a font/non-code file, downloads code, or is hidden (`reveal: never`, `echo: false`). A plain folder-open task only warns |
+| `vscode-auto-tasks` | committed `task.allowAutomaticTasks: on`, which lets folder-open tasks run with no prompt |
+| `push-tool` · `push-tool-ignored` | the worm's propagation files (`temp_auto_push.bat`, `temp_interactive_push.bat`, `branch_structure.json`), or a `.gitignore` that hides them |
+
 **Block at score ≥ 70, warn at ≥ 35** (configurable). Because the signals are
 independent, evading one (rename, split, runtime-fetch, drop the padding) still
 trips the others — so evasion becomes self-defeating: visible in review, inert,

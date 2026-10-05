@@ -59,6 +59,54 @@ check('allow-next-line suppresses',
 check('allow-line inline suppresses',
   scanContent('b.js', 'x;' + ' '.repeat(100) + 'y; // polinguard-allow-line\n', cfg).length === 0);
 
+// --- Delivery artifacts (fake fonts, folder-open tasks, push tooling) -----
+// Synthetic, inert samples shaped like the Oct-2026 PolinRider wave, scanned through run() so file selection
+// (non-code extensions) is covered too.
+const { run } = require('../src/scan');
+const os2 = require('os');
+const art = fs.mkdtempSync(path.join(os2.tmpdir(), 'pg-art-'));
+const put = (rel, data, enc = 'utf8') => {
+  fs.mkdirSync(path.dirname(path.join(art, rel)), { recursive: true });
+  fs.writeFileSync(path.join(art, rel), data, enc);
+  return rel;
+};
+const tabbed = "\t".repeat(421) + "global['!'] = '8-J';var _0x1=function(){return 0};_0x1();\n";
+const files = {
+  llf: put('public/fonts/fa-solid-300.llf', tabbed),
+  fakeWoff2: put('public/fonts/fa-solid-500.woff2', 'var inert = 0;\n'),
+  realWoff2: put('public/fonts/real.woff2', Buffer.from([0x77, 0x4f, 0x46, 0x32, 0x00, 0x01, 0xff, 0x80]), null),
+  realTtf: put('public/fonts/real.ttf', Buffer.from([0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x01, 0x00]), null),
+  tasksEvil: put('evil/.vscode/tasks.json', '{ "version": "2.0.0", "tasks": [ { "label": "eslint-check", "type": "shell",\n' +
+    '  "command": "node ./public/fonts/fa-solid-300.llf",\n  "presentation": { "reveal": "never", "echo": false },\n' +
+    '  "runOptions": { "\\u0072unOn": "folderOpen" } }, ] }\n'),
+  tasksPlainOpen: put('dev/.vscode/tasks.json', '{ "tasks": [ { "label": "dev", "type": "npm", "script": "dev", "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  tasksBuild: put('ok/.vscode/tasks.json', '{ "tasks": [ { "label": "build", "type": "shell", "command": "npm run build" } ] }\n'),
+  settingsAuto: put('evil/.vscode/settings.json', '{ "task.allowAutomaticTasks": "on" }\n'),
+  settingsOk: put('ok/.vscode/settings.json', '{ "editor.tabSize": 2 }\n'),
+  ignoreEvil: put('evil/.gitignore', 'node_modules\ntemp_auto_push.bat\nbranch_structure.json\n'),
+  ignoreOk: put('ok/.gitignore', 'node_modules\n.env\n'),
+  pushTool: put('tools/branch_structure.json', '{"branches":[]}\n'),
+  tabConfig: put('web/postcss.config.js', 'module.exports = {};' + tabbed),
+};
+const res = run({ mode: 'paths', cwd: art, paths: Object.values(files) });
+const at = (rel) => res.findings.filter((f) => f.file === rel);
+const crit = (rel, rule) => at(rel).some((f) => f.severity === 'critical' && (!rule || f.ruleId === rule));
+check('ART: .llf loader is read and blocked as a fake font', crit(files.llf, 'fake-font'));
+check('ART: .llf content also line-scored (tab-padded stamp)', at(files.llf).some((f) => f.ruleId !== 'fake-font'));
+check('ART: text .woff2 is a fake font', crit(files.fakeWoff2, 'fake-font'));
+check('ART: real woff2 / ttf headers are not flagged', at(files.realWoff2).length === 0 && at(files.realTtf).length === 0);
+check('ART: hidden folder-open task running a font-named file blocks (escaped key too)', crit(files.tasksEvil, 'vscode-autorun'));
+check('ART: plain folder-open npm task only warns', at(files.tasksPlainOpen).some((f) => f.severity === 'warning') && !crit(files.tasksPlainOpen));
+check('ART: ordinary build task not flagged', at(files.tasksBuild).length === 0);
+check('ART: committed task.allowAutomaticTasks blocks', crit(files.settingsAuto, 'vscode-auto-tasks'));
+check('ART: ordinary settings.json not flagged', at(files.settingsOk).length === 0);
+check('ART: .gitignore hiding the push tool blocks', crit(files.ignoreEvil, 'push-tool-ignored'));
+check('ART: ordinary .gitignore not flagged', at(files.ignoreOk).length === 0);
+check('ART: branch_structure.json push-tool file blocks', crit(files.pushTool, 'push-tool'));
+check('ART: tab-padded loader in a config blocks', crit(files.tabConfig));
+check('ART: run() reports blocking', res.blocking === true);
+fs.rmSync(art, { recursive: true, force: true });
+
 // --- Supply-chain layer ----------------------------------------------------
 const { auditInstall, harden, levenshtein } = require('../src/supplychain');
 const os = require('os');
