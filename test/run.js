@@ -87,6 +87,18 @@ const files = {
   ignoreOk: put('ok/.gitignore', 'node_modules\n.env\n'),
   pushTool: put('tools/branch_structure.json', '{"branches":[]}\n'),
   tabConfig: put('web/postcss.config.js', 'module.exports = {};' + tabbed),
+  // review regressions (PR #4)
+  trueWoff2: put('r1/fonts/loader.woff2', 'true;' + tabbed),
+  magicTextWoff2: put('r1/fonts/m.woff2', 'wOF2' + '=0;var inert = 1;\n'.repeat(20)),
+  splitTask: put('r2/.vscode/tasks.json', '{ "tasks": [ { "label": "w", "type": "process", "command": "node",\n' +
+    '  "args": ["public/fonts/loader.llf"], "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  commentTask: put('r3/.vscode/tasks.json', '{ "tasks": [ { "label": "w", "type": "shell", "command": "node ./public/fonts/x.llf",\n' +
+    '  "runOptions": { "runOn": /* hide */ "folderOpen" } }, ] }\n'),
+  mixedTasks: put('r4/.vscode/tasks.json', '{ "tasks": [\n' +
+    '  { "label": "dev", "type": "npm", "script": "dev", "runOptions": { "runOn": "folderOpen" } },\n' +
+    '  { "label": "quiet build", "type": "shell", "command": "npm run build", "presentation": { "reveal": "never" } } ] }\n'),
+  ignoreBenign: put('r5/.gitignore', '# temp_auto_push.bat is the PolinRider push tool\n!temp_auto_push.bat\n*.bat\n*.json\n'),
+  ignoreGlob: put('r6/.gitignore', 'node_modules\ntemp_auto_*.bat\n'),
 };
 const res = run({ mode: 'paths', cwd: art, paths: Object.values(files) });
 const at = (rel) => res.findings.filter((f) => f.file === rel);
@@ -105,6 +117,14 @@ check('ART: ordinary .gitignore not flagged', at(files.ignoreOk).length === 0);
 check('ART: branch_structure.json push-tool file blocks', crit(files.pushTool, 'push-tool'));
 check('ART: tab-padded loader in a config blocks', crit(files.tabConfig));
 check('ART: run() reports blocking', res.blocking === true);
+check('REVIEW: .woff2 starting with the TrueType tag "true" is still a fake font', crit(files.trueWoff2, 'fake-font'));
+check('REVIEW: valid wOF2 header followed by plain text is a fake font', crit(files.magicTextWoff2, 'fake-font'));
+check('REVIEW: node in command + font file in args blocks', crit(files.splitTask, 'vscode-autorun'));
+check('REVIEW: comment between runOn and folderOpen does not hide the task', crit(files.commentTask, 'vscode-autorun'));
+check('REVIEW: hidden manual task does not escalate a plain folder-open task',
+  !crit(files.mixedTasks) && at(files.mixedTasks).some((f) => f.severity === 'warning' && /"dev"/.test(f.message)));
+check('REVIEW: .gitignore comment, negation and broad *.bat/*.json are not flagged', at(files.ignoreBenign).length === 0);
+check('REVIEW: .gitignore wildcard temp_auto_*.bat is flagged', crit(files.ignoreGlob, 'push-tool-ignored'));
 fs.rmSync(art, { recursive: true, force: true });
 
 // --- Supply-chain layer ----------------------------------------------------
