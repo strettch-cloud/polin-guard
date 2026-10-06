@@ -1,9 +1,9 @@
 # Contributing to polin-guard
 
-Thanks for helping make supply-chain attacks harder to pull off. 🛡️
+Thanks for helping make supply-chain attacks harder to pull off.
 
 polin-guard is intentionally **tiny and zero-dependency**. Please keep it that
-way — no runtime dependencies should be added.
+way, no runtime dependencies should be added.
 
 ## Getting started
 
@@ -13,7 +13,7 @@ cd polin-guard
 npm test        # runs the zero-dependency test suite
 ```
 
-There is nothing to build — it is plain CommonJS that runs on Node ≥ 14.
+There is nothing to build, it is plain CommonJS that runs on Node ≥ 14.
 
 ## Project layout
 
