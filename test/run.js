@@ -71,11 +71,26 @@ const put = (rel, data, enc = 'utf8') => {
   return rel;
 };
 const tabbed = "\t".repeat(421) + "global['!'] = '8-J';var _0x1=function(){return 0};_0x1();\n";
+// Structurally valid font headers with a deterministic binary body (no code markers).
+const noise = (n, seed = 7) => { const b = Buffer.alloc(n); for (let i = 0; i < n; i++) { seed = (seed * 1103515245 + 12345) >>> 0; b[i] = seed >>> 24; } return b; };
+const woff2 = (tail = Buffer.alloc(0)) => {
+  const body = noise(240);
+  const h = Buffer.alloc(48);
+  h.write('wOF2', 0, 'latin1'); h.writeUInt32BE(0x00010000, 4); h.writeUInt32BE(48 + body.length + tail.length, 8);
+  h.writeUInt16BE(1, 12); h.writeUInt16BE(0, 14); h.writeUInt32BE(1000, 16); h.writeUInt32BE(body.length, 20);
+  return Buffer.concat([h, body, tail]);
+};
+const ttf = () => {
+  const h = Buffer.alloc(12 + 16);
+  h.writeUInt32BE(0x00010000, 0); h.writeUInt16BE(1, 4); h.writeUInt16BE(16, 6); h.writeUInt16BE(0, 8); h.writeUInt16BE(0, 10);
+  h.write('glyf', 12, 'latin1'); h.writeUInt32BE(28, 20); h.writeUInt32BE(200, 24);
+  return Buffer.concat([h, noise(200, 11)]);
+};
 const files = {
   llf: put('public/fonts/fa-solid-300.llf', tabbed),
   fakeWoff2: put('public/fonts/fa-solid-500.woff2', 'var inert = 0;\n'),
-  realWoff2: put('public/fonts/real.woff2', Buffer.from([0x77, 0x4f, 0x46, 0x32, 0x00, 0x01, 0xff, 0x80]), null),
-  realTtf: put('public/fonts/real.ttf', Buffer.from([0x00, 0x01, 0x00, 0x00, 0x00, 0x10, 0x01, 0x00]), null),
+  realWoff2: put('public/fonts/real.woff2', woff2(), null),
+  realTtf: put('public/fonts/real.ttf', ttf(), null),
   tasksEvil: put('evil/.vscode/tasks.json', '{ "version": "2.0.0", "tasks": [ { "label": "eslint-check", "type": "shell",\n' +
     '  "command": "node ./public/fonts/fa-solid-300.llf",\n  "presentation": { "reveal": "never", "echo": false },\n' +
     '  "runOptions": { "\\u0072unOn": "folderOpen" } }, ] }\n'),
@@ -99,6 +114,18 @@ const files = {
     '  { "label": "quiet build", "type": "shell", "command": "npm run build", "presentation": { "reveal": "never" } } ] }\n'),
   ignoreBenign: put('r5/.gitignore', '# temp_auto_push.bat is the PolinRider push tool\n!temp_auto_push.bat\n*.bat\n*.json\n'),
   ignoreGlob: put('r6/.gitignore', 'node_modules\ntemp_auto_*.bat\n'),
+  // second review round
+  commentPaddedWoff2: put('r7/fonts/a.woff2', Buffer.concat([Buffer.from('wOF2=0;/*', 'latin1'), noise(300, 3),
+    Buffer.from("*/\nglobal['!'] = '8-J';eval(atob(process.env.K));\n", 'latin1')]), null),
+  validHeaderWithCode: put('r7/fonts/b.woff2', woff2(Buffer.from("\n;global['!'] = '8-J';eval(atob(process.env.K));\n", 'latin1')), null),
+  farTrailingComma: put('r8/.vscode/tasks.json', '{ "tasks": [ { "label": "w", "type": "shell",\n' +
+    '  "command": "node \\"public/fonts/loader.llf\\"", "runOptions": { "runOn": "folderOpen" } },' +
+    ' '.repeat(80) + '// ' + 'x'.repeat(80) + '\n ] }\n'),
+  osMixed: put('r9/.vscode/tasks.json', '{ "tasks": [ { "label": "dev", "type": "shell", "command": "npm run dev",\n' +
+    '  "windows": { "command": "node" }, "linux": { "args": ["public/fonts/x.llf"] },\n' +
+    '  "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  osEvil: put('r10/.vscode/tasks.json', '{ "tasks": [ { "label": "dev", "type": "shell", "command": "npm run dev",\n' +
+    '  "osx": { "command": "node", "args": ["public/fonts/x.llf"] }, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
 };
 const res = run({ mode: 'paths', cwd: art, paths: Object.values(files) });
 const at = (rel) => res.findings.filter((f) => f.file === rel);
@@ -125,6 +152,12 @@ check('REVIEW: hidden manual task does not escalate a plain folder-open task',
   !crit(files.mixedTasks) && at(files.mixedTasks).some((f) => f.severity === 'warning' && /"dev"/.test(f.message)));
 check('REVIEW: .gitignore comment, negation and broad *.bat/*.json are not flagged', at(files.ignoreBenign).length === 0);
 check('REVIEW: .gitignore wildcard temp_auto_*.bat is flagged', crit(files.ignoreGlob, 'push-tool-ignored'));
+check('REVIEW2: wOF2 + binary bytes in a JS comment is a fake font', crit(files.commentPaddedWoff2, 'fake-font'));
+check('REVIEW2: well-formed font header with code appended blocks (code-in-font)', crit(files.validHeaderWithCode, 'code-in-font'));
+check('REVIEW2: trailing comma far from its bracket + escaped quotes still blocks', crit(files.farTrailingComma, 'vscode-autorun'));
+check('REVIEW2: windows command + linux args are not paired into one command', !crit(files.osMixed) &&
+  at(files.osMixed).some((f) => f.severity === 'warning'));
+check('REVIEW2: a dangerous per-OS command still blocks, naming the OS', at(files.osEvil).some((f) => f.severity === 'critical' && /on osx/.test(f.message)));
 fs.rmSync(art, { recursive: true, force: true });
 
 // --- Supply-chain layer ----------------------------------------------------

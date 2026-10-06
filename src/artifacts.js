@@ -45,16 +45,36 @@ function looksBinary(bytes) {
   return odd / s.length >= 0.1;
 }
 
-/** True only for the header that belongs to this extension, on content that is actually binary. */
+const u16 = (s, o) => (s.charCodeAt(o) << 8) + s.charCodeAt(o + 1);
+const u32 = (s, o) => s.charCodeAt(o) * 0x1000000 + (s.charCodeAt(o + 1) << 16) + (s.charCodeAt(o + 2) << 8) + s.charCodeAt(o + 3);
+const u32le = (s, o) => s.charCodeAt(o) + (s.charCodeAt(o + 1) << 8) + (s.charCodeAt(o + 2) << 16) + s.charCodeAt(o + 3) * 0x1000000;
+
+/** Header fields a real font of this type must have; a copied 4-byte magic alone does not pass. */
+function fontHeaderOk(s, ext) {
+  const magic = s.slice(0, 4);
+  if (ext === '.eot') return s.length > 36 && s.slice(34, 36) === 'LP' && u32le(s, 0) === s.length;
+  if (!(FONT_MAGIC[ext] || []).includes(magic)) return false;
+  if (magic === 'wOFF' || magic === 'wOF2') {
+    // total length == file size, at least one table, reserved field zero
+    return s.length >= 48 && u32(s, 8) === s.length && u16(s, 12) > 0 && u16(s, 14) === 0;
+  }
+  if (magic === 'ttcf') return s.length >= 16 && [0x10000, 0x20000].includes(u32(s, 4)) && u32(s, 8) > 0 && u32(s, 8) < 256;
+  // sfnt: searchRange is fixed by numTables, and the table directory must fit in the file
+  const n = u16(s, 4);
+  if (n < 1 || n > 200 || s.length < 12 + 16 * n) return false;
+  return u16(s, 6) === 16 * 2 ** Math.floor(Math.log2(n));
+}
+
+/** True only for a well-formed header of this extension's own type, on content that is actually binary. */
 function isRealFont(bytes, ext) {
-  const head = ext === '.eot' ? bytes.slice(34, 36) === 'LP' : (FONT_MAGIC[ext] || []).includes(bytes.slice(0, 4));
-  return head && looksBinary(bytes);
+  return fontHeaderOk(bytes, ext) && looksBinary(bytes);
 }
 
 /** JSONC (comments, trailing commas, BOM) to JSON; strings are copied untouched. */
 function stripJsonc(s) {
   let out = '';
   let inStr = false;
+  let comma = -1; // index in `out` of a comma followed so far only by whitespace/comments
   const start = s.charCodeAt(0) === 0xfeff ? 1 : s.startsWith('\xef\xbb\xbf') ? 3 : 0; // BOM, decoded or as latin1
   for (let i = start; i < s.length; i++) {
     const c = s[i];
@@ -62,18 +82,22 @@ function stripJsonc(s) {
       out += c;
       if (c === '\\') out += s[++i] || '';
       else if (c === '"') inStr = false;
-    } else if (c === '"') {
-      inStr = true; out += c;
-    } else if (c === '/' && s[i + 1] === '/') {
+      continue;
+    }
+    if (c === '/' && s[i + 1] === '/') {
       while (i < s.length && s[i] !== '\n') i++;
       out += '\n';
     } else if (c === '/' && s[i + 1] === '*') {
       const end = s.indexOf('*/', i + 2);
       i = end < 0 ? s.length : end + 1;
       out += ' ';
-    } else if (c === ',' && /^\s*[}\]]/.test(s.slice(i + 1, i + 64).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ''))) {
-      // trailing comma: dropped
+    } else if ((c === '}' || c === ']') && comma >= 0) {
+      out = out.slice(0, comma) + out.slice(comma + 1) + c; // trailing comma: dropped
+      comma = -1;
     } else {
+      if (c === ',') comma = out.length;
+      else if (!/\s/.test(c)) comma = -1;
+      if (c === '"') inStr = true;
       out += c;
     }
   }
@@ -83,20 +107,26 @@ function parseJsonc(s) {
   try { return JSON.parse(stripJsonc(s)); } catch { return null; }
 }
 
-/** Every string under a task's command/args, including { value } objects and per-OS overrides. */
+/** Every string under a command/args value, including { value } objects. */
 const strings = (v) => (v == null ? [] : Array.isArray(v) ? v.flatMap(strings)
   : typeof v === 'object' ? strings(v.value) : [String(v)]);
-function taskCommand(t, top) {
-  const parts = [];
-  for (const o of [t, t.windows, t.osx, t.linux]) {
-    if (o && typeof o === 'object') parts.push(...strings(o.command), ...strings(o.args));
+
+/**
+ * The command line and visibility VS Code would use on each OS: windows/osx/linux properties override the
+ * task's own, which override the file's top-level ones. Each variant is judged on its own.
+ */
+function taskVariants(t, top) {
+  const out = [];
+  for (const os of [null, 'windows', 'osx', 'linux']) {
+    const o = os ? t[os] : null;
+    if (os && (!o || typeof o !== 'object')) continue;
+    const pick = (k) => (o && o[k] !== undefined ? o[k] : t[k] !== undefined ? t[k] : top[k]);
+    const cmd = [...strings(pick('command')), ...strings(pick('args'))].join(' ');
+    const p = { ...(top.presentation || {}), ...(t.presentation || {}), ...((o && o.presentation) || {}) };
+    const hidden = p.reveal === 'never' || p.echo === false || p.close === true || pick('hide') === true;
+    out.push({ os: os || 'all', cmd, hidden });
   }
-  if (!strings(t.command).length) parts.unshift(...strings(top.command), ...strings(top.args));
-  return parts.join(' ');
-}
-function taskHidden(t, top) {
-  const p = { ...(top.presentation || {}), ...(t.presentation || {}) };
-  return p.reveal === 'never' || p.echo === false || p.close === true || t.hide === true;
+  return out;
 }
 
 /** Reasons a folder-open command line is dangerous (empty = an ordinary auto-start task). */
@@ -133,8 +163,8 @@ function ignoredTools(line) {
 }
 
 /**
- * Returns { findings, scanText }: scanText is false when the content is not source text worth line scoring
- * (a real font, a .gitignore).
+ * Returns { findings, scanText }: true = line-score as source, 'binary' = a real font, scored with the signals
+ * that random binary cannot trip, false = nothing to score (a .gitignore).
  */
 function scanArtifacts(file, content) {
   const f = norm(file);
@@ -153,7 +183,8 @@ function scanArtifacts(file, content) {
     return { findings, scanText: true };
   }
   if (ext in FONT_MAGIC) {
-    if (isRealFont(content, ext)) return { findings, scanText: false };
+    // A real font is still scanned, with the binary-safe signals only: a header can be forged inside a comment.
+    if (isRealFont(content, ext)) return { findings, scanText: 'binary' };
     add('critical', 'fake-font', `${ext} file is not a real ${ext.slice(1)} font (wrong header or plain text): code disguised as a font`);
     return { findings, scanText: true };
   }
@@ -186,13 +217,17 @@ function scanArtifacts(file, content) {
       for (const t of Array.isArray(root.tasks) ? root.tasks : []) {
         if (!t || typeof t !== 'object' || !t.runOptions || t.runOptions.runOn !== 'folderOpen') continue;
         const label = t.label || t.taskName || t.script || '(unnamed)';
-        const why = dangers(taskCommand(t, root), taskHidden(t, root));
-        if (why.length) add('critical', 'vscode-autorun', `task "${label}" runs automatically on folder open and ${why.join(', ')}`);
-        else add('warning', 'vscode-autorun', `task "${label}" runs automatically on folder open (runOn: folderOpen); verify it is intended`);
+        const bad = taskVariants(t, root).map((v) => ({ v, why: dangers(v.cmd, v.hidden) })).filter((x) => x.why.length);
+        if (bad.length) {
+          const { v, why } = bad[0];
+          add('critical', 'vscode-autorun', `task "${label}" runs automatically on folder open and ${why.join(', ')}` +
+            (v.os === 'all' ? '' : ` (on ${v.os})`));
+        } else add('warning', 'vscode-autorun', `task "${label}" runs automatically on folder open (runOn: folderOpen); verify it is intended`);
       }
     } else if (/"runOn"\s*:\s*"folderOpen"/.test(flat)) {
       // Unparseable file: judge it as a whole rather than miss it.
-      const cmds = (flat.match(/"(command|args)"\s*:\s*(\[[^\]]*\]|"[^"]*")/g) || []).join(' ').replace(/"/g, ' ');
+      const cmds = (flat.match(/"(?:command|args)"\s*:\s*(?:\[(?:[^\]"]|"(?:[^"\\]|\\.)*")*\]|"(?:[^"\\]|\\.)*")/g) || [])
+        .join(' ').replace(/\\?"/g, ' ');
       const why = dangers(cmds, /"reveal"\s*:\s*"never"|"echo"\s*:\s*false|"hide"\s*:\s*true|"close"\s*:\s*true/.test(flat));
       add(why.length ? 'critical' : 'warning', 'vscode-autorun',
         `task file does not parse as JSONC and has a folder-open task${why.length ? ' that ' + why.join(', ') : ''}`);

@@ -88,7 +88,7 @@ function analyzeLine(line, cfg, ctx = {}) {
 
   // Concealment: code after a long mid-line whitespace gap (off-screen trick).
   const body = line.replace(/^[ \t]+/, '');
-  if (new RegExp(`\\S[ \\t]{${cfg.minGapWhitespace},}\\S`).test(body)) {
+  if (Number.isFinite(cfg.minGapWhitespace) && new RegExp(`\\S[ \\t]{${cfg.minGapWhitespace},}\\S`).test(body)) {
     add('concealment', WEIGHTS.concealment, `code hidden after ${cfg.minGapWhitespace}+ spaces (off-screen concealment)`);
   }
 
@@ -192,6 +192,18 @@ function scanContent(file, content, cfg) {
   return findings;
 }
 
+/**
+ * A well-formed font can still carry a loader (its header forged inside a JS comment). Score it with the
+ * signals binary data cannot trip — no line-length, token-length, entropy, escape-count or whitespace-gap
+ * checks (uncompressed TrueType holds long 0x20 runs) — and treat any code marker in a font as blocking.
+ */
+function scanFontCode(file, content, cfg) {
+  const binCfg = { ...cfg, maxLineLength: Infinity, maxTokenLength: Infinity, entropyMinLen: Infinity,
+    maxEscapes: Infinity, fileEscapeTotal: Infinity, minGapWhitespace: Infinity, warningScore: 1 };
+  return scanContent(file, content, binCfg).map((f) => ({ ...f, severity: 'critical', ruleId: 'code-in-font',
+    message: `code inside a font file: ${f.message}` }));
+}
+
 function run(opts = {}) {
   const cwd = opts.cwd || process.cwd();
   const cfg = loadConfig(cwd);
@@ -223,7 +235,8 @@ function run(opts = {}) {
       findings.push(...a.findings);
       scanText = a.scanText;
     }
-    if (scanText) findings.push(...scanContent(file, content, cfg));
+    if (scanText === 'binary') findings.push(...scanFontCode(file, content, cfg));
+    else if (scanText) findings.push(...scanContent(file, content, cfg));
   }
 
   const critical = findings.filter((f) => f.severity === 'critical');
@@ -232,4 +245,4 @@ function run(opts = {}) {
   return { filesScanned: scanned.length, findings, critical, warnings, blocking };
 }
 
-module.exports = { run, scanContent, scanArtifacts, analyzeLine, loadConfig, entropy, isAutoLoaded };
+module.exports = { run, scanContent, scanArtifacts, scanFontCode, analyzeLine, loadConfig, entropy, isAutoLoaded };
