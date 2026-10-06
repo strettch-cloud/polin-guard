@@ -6,12 +6,12 @@
 
 const path = require('path');
 
-// Header bytes a real font of each type starts with (EOT keeps its magic at offset 34 instead).
+// Font extensions, and the header bytes a real font starts with (EOT keeps its magic at offset 34 instead).
 const FONT_MAGIC = {
   '.woff': ['wOFF'],
   '.woff2': ['wOF2'],
   '.ttf': ['\x00\x01\x00\x00', 'true', 'ttcf'],
-  '.otf': ['OTTO', '\x00\x01\x00\x00', 'ttcf'],
+  '.otf': ['OTTO'],
   '.eot': [],
 };
 const PUSH_TOOLS = ['temp_auto_push.bat', 'temp_interactive_push.bat', 'branch_structure.json'];
@@ -53,11 +53,20 @@ const u16 = (s, o) => (s.charCodeAt(o) << 8) + s.charCodeAt(o + 1);
 const u32 = (s, o) => s.charCodeAt(o) * 0x1000000 + (s.charCodeAt(o + 1) << 16) + (s.charCodeAt(o + 2) << 8) + s.charCodeAt(o + 3);
 const u32le = (s, o) => s.charCodeAt(o) + (s.charCodeAt(o + 1) << 8) + (s.charCodeAt(o + 2) << 16) + s.charCodeAt(o + 3) * 0x1000000;
 
-/** Header fields a real font of this type must have; a copied 4-byte magic alone does not pass. */
-function fontHeaderOk(s, ext) {
+/**
+ * Header fields a real font must have; a copied 4-byte magic alone does not pass. Any font format is accepted
+ * under any font extension (vendors ship WOFF2 named .woff, and browsers sniff the content); the structure
+ * checks are what keep text out, since none of them can be met by printable bytes.
+ */
+function fontHeaderOk(s) {
   const magic = s.slice(0, 4);
-  if (ext === '.eot') return s.length > 36 && s.slice(34, 36) === 'LP' && u32le(s, 0) === s.length;
-  if (!(FONT_MAGIC[ext] || []).includes(magic)) return false;
+  // EOT: magic at 34, known version, and a total size that some writers pad by a few bytes but never undercount
+  // (data appended after a real font would make the file larger than the header says).
+  if (s.length > 36 && s.slice(34, 36) === 'LP') {
+    const over = u32le(s, 0) - s.length;
+    return over >= 0 && over <= 4 && [0x10000, 0x20001, 0x20002].includes(u32le(s, 8)) && u32le(s, 4) <= s.length;
+  }
+  if (!Object.values(FONT_MAGIC).some((m) => m.includes(magic))) return false;
   if (magic === 'wOFF' || magic === 'wOF2') {
     // total length == file size, at least one table, reserved field zero
     return s.length >= 48 && u32(s, 8) === s.length && u16(s, 12) > 0 && u16(s, 14) === 0;
@@ -69,9 +78,9 @@ function fontHeaderOk(s, ext) {
   return u16(s, 6) === 16 * 2 ** Math.floor(Math.log2(n));
 }
 
-/** True only for a well-formed header of this extension's own type, on content that is actually binary. */
-function isRealFont(bytes, ext) {
-  return fontHeaderOk(bytes, ext) && looksBinary(bytes);
+/** True only for a well-formed font header on content that is actually binary. */
+function isRealFont(bytes) {
+  return fontHeaderOk(bytes) && looksBinary(bytes);
 }
 
 /** JSONC (comments, trailing commas, BOM) to JSON; strings are copied untouched. */
@@ -285,8 +294,8 @@ function scanArtifacts(file, content) {
   }
   if (ext in FONT_MAGIC) {
     // A real font is still scanned, with the binary-safe signals only: a header can be forged inside a comment.
-    if (isRealFont(content, ext)) return { findings, scanText: 'binary' };
-    add('critical', 'fake-font', `${ext} file is not a real ${ext.slice(1)} font (wrong header or plain text): code disguised as a font`);
+    if (isRealFont(content)) return { findings, scanText: 'binary' };
+    add('critical', 'fake-font', `${ext} file is not a real font (malformed header or plain text): code disguised as a font`);
     return { findings, scanText: true };
   }
 
