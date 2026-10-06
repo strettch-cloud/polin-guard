@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { DEFAULTS, WEIGHTS, SIGNATURES, RE } = require('./patterns');
+const { scanArtifacts, isArtifactCandidate } = require('./artifacts');
 
 const ALLOW_LINE_MARKER = 'polinguard-allow-next-line';
 const ALLOW_INLINE_MARKER = 'polinguard-allow-line';
@@ -21,8 +22,8 @@ function loadConfig(cwd) {
   return { ...DEFAULTS };
 }
 
-function git(args, cwd) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 1024 * 1024 * 64 });
+function git(args, cwd, encoding = 'utf8') {
+  return execFileSync('git', args, { cwd, encoding, maxBuffer: 1024 * 1024 * 64 });
 }
 function getStagedFiles(cwd) {
   return git(['diff', '--cached', '--name-only', '--diff-filter=ACMR'], cwd).split('\n').filter(Boolean);
@@ -30,14 +31,15 @@ function getStagedFiles(cwd) {
 function getTrackedFiles(cwd) {
   return git(['ls-files'], cwd).split('\n').filter(Boolean);
 }
-function readStaged(file, cwd) {
-  try { return git(['show', `:${file}`], cwd); } catch { return null; }
+function readStaged(file, cwd, encoding) {
+  try { return git(['show', `:${file}`], cwd, encoding); } catch { return null; }
 }
 
 function isExcluded(file, cfg) {
   const parts = file.split(/[\\/]/);
   if (parts.some((p) => cfg.excludeDirs.includes(p))) return true;
   if (cfg.excludeFilePatterns.some((re) => re.test(file))) return true;
+  if (isArtifactCandidate(file)) return false; // fonts, .llf, VS Code tasks/settings, .gitignore, push tools
   return !cfg.includeExtensions.includes(path.extname(file).toLowerCase());
 }
 
@@ -86,7 +88,7 @@ function analyzeLine(line, cfg, ctx = {}) {
 
   // Concealment: code after a long mid-line whitespace gap (off-screen trick).
   const body = line.replace(/^[ \t]+/, '');
-  if (new RegExp(`\\S[ \\t]{${cfg.minGapWhitespace},}\\S`).test(body)) {
+  if (Number.isFinite(cfg.minGapWhitespace) && new RegExp(`\\S[ \\t]{${cfg.minGapWhitespace},}\\S`).test(body)) {
     add('concealment', WEIGHTS.concealment, `code hidden after ${cfg.minGapWhitespace}+ spaces (off-screen concealment)`);
   }
 
@@ -190,6 +192,18 @@ function scanContent(file, content, cfg) {
   return findings;
 }
 
+/**
+ * A well-formed font can still carry a loader (its header forged inside a JS comment). Score it with the
+ * signals binary data cannot trip — no line-length, token-length, entropy, escape-count or whitespace-gap
+ * checks (uncompressed TrueType holds long 0x20 runs) — and treat any code marker in a font as blocking.
+ */
+function scanFontCode(file, content, cfg) {
+  const binCfg = { ...cfg, maxLineLength: Infinity, maxTokenLength: Infinity, entropyMinLen: Infinity,
+    maxEscapes: Infinity, fileEscapeTotal: Infinity, minGapWhitespace: Infinity, warningScore: 1 };
+  return scanContent(file, content, binCfg).map((f) => ({ ...f, severity: 'critical', ruleId: 'code-in-font',
+    message: `code inside a font file: ${f.message}` }));
+}
+
 function run(opts = {}) {
   const cwd = opts.cwd || process.cwd();
   const cfg = loadConfig(cwd);
@@ -198,23 +212,31 @@ function run(opts = {}) {
   let files, readFile;
   if (mode === 'paths') {
     files = opts.paths || [];
-    readFile = (f) => { try { return fs.readFileSync(path.resolve(cwd, f), 'utf8'); } catch { return null; } };
+    readFile = (f, enc) => { try { return fs.readFileSync(path.resolve(cwd, f), enc); } catch { return null; } };
   } else if (mode === 'all') {
     files = getTrackedFiles(cwd);
-    readFile = (f) => { try { return fs.readFileSync(path.resolve(cwd, f), 'utf8'); } catch { return null; } };
+    readFile = (f, enc) => { try { return fs.readFileSync(path.resolve(cwd, f), enc); } catch { return null; } };
   } else {
     files = getStagedFiles(cwd);
-    readFile = (f) => readStaged(f, cwd);
+    readFile = (f, enc) => readStaged(f, cwd, enc);
   }
 
   const scanned = [];
   const findings = [];
   for (const file of files) {
     if (isExcluded(file, cfg)) continue;
-    const content = readFile(file);
+    const artifact = isArtifactCandidate(file);
+    const content = readFile(file, artifact ? 'latin1' : 'utf8');
     if (content == null) continue;
     scanned.push(file);
-    findings.push(...scanContent(file, content, cfg));
+    let scanText = true;
+    if (artifact) {
+      const a = scanArtifacts(file, content);
+      findings.push(...a.findings);
+      scanText = a.scanText;
+    }
+    if (scanText === 'binary') findings.push(...scanFontCode(file, content, cfg));
+    else if (scanText) findings.push(...scanContent(file, content, cfg));
   }
 
   const critical = findings.filter((f) => f.severity === 'critical');
@@ -223,4 +245,4 @@ function run(opts = {}) {
   return { filesScanned: scanned.length, findings, critical, warnings, blocking };
 }
 
-module.exports = { run, scanContent, analyzeLine, loadConfig, entropy, isAutoLoaded };
+module.exports = { run, scanContent, scanArtifacts, scanFontCode, analyzeLine, loadConfig, entropy, isAutoLoaded };
