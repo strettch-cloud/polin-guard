@@ -20,14 +20,18 @@ const PUSH_TOOL_FILE = /^(temp_auto_push\.bat|temp_interactive_push\.bat|branch_
 const RUNS_FILE = /\b(node|nodejs|bun|deno|python[0-9.]*|sh|bash|zsh|pwsh|powershell|cmd|wscript|cscript)(\.exe)?\b.*\.[a-z0-9]+\b/i;
 const DOWNLOADS = /\b(curl|wget|iwr|Invoke-WebRequest|certutil)\b|\bnpx\s+(-y|--yes)\b/i;
 const NON_CODE_FILE = /\.(llf|woff2?|ttf|otf|eot|png|jpe?g|gif|svg|ico|txt|dat|bin|log)\b/i;
+// runOn values VS Code acts on without being asked; it lowercases the value before matching.
+const AUTO_RUN = new Map([['folderopen', 'folder open'], ['worktreecreated', 'worktree creation']]);
 
+// Paths are matched lowercased: on macOS/Windows a committed .VSCode/Tasks.json is what VS Code opens.
 const norm = (f) => f.replace(/\\/g, '/');
 const base = (f) => norm(f).split('/').pop() || '';
+const lower = (v) => (typeof v === 'string' ? v.toLowerCase() : v);
 
 /** Files that need an artifact check even when their extension is not scanned for code. */
 function isArtifactCandidate(file) {
-  const f = norm(file);
-  const ext = path.extname(f).toLowerCase();
+  const f = norm(file).toLowerCase();
+  const ext = path.extname(f);
   const b = base(f);
   return ext in FONT_MAGIC || ext === '.llf' || ext === '.code-workspace' || b === '.gitignore' ||
     /(^|\/)\.vscode\/(tasks|settings)\.json$/.test(f) || PUSH_TOOL_FILE.test(b);
@@ -111,22 +115,119 @@ function parseJsonc(s) {
 const strings = (v) => (v == null ? [] : Array.isArray(v) ? v.flatMap(strings)
   : typeof v === 'object' ? strings(v.value) : [String(v)]);
 
+const PLATFORMS = ['windows', 'osx', 'linux'];
+// Past these a crafted task file is reported for review instead of analysed, so the scan stays fast.
+const MAX_TASKS = 1000;
+const MAX_REFS = 5000;
+
+const objs = (...ls) => ls.filter((l) => l && typeof l === 'object' && !Array.isArray(l));
+const taskList = (scope) => (objs(scope).length && Array.isArray(scope.tasks) ? objs(...scope.tasks) : []);
+const depRefs = (t) => (t.dependsOn == null ? [] : [].concat(t.dependsOn));
+const labelOf = (t) => (typeof t.label === 'string' ? t.label : typeof t.taskName === 'string' ? t.taskName : undefined);
+const autoTrigger = (t) => {
+  const r = objs(t.runOptions).length ? t.runOptions.runOn : undefined;
+  return typeof r === 'string' ? AUTO_RUN.get(r.toLowerCase()) : undefined;
+};
+const firstDefined = (layers, get) => {
+  for (const l of layers) { const v = get(l); if (v !== undefined) return v; }
+  return undefined;
+};
+/** A command value as text, or undefined where VS Code ignores it (null, numbers, ...). */
+const commandText = (v) => (typeof v === 'string' ? v : Array.isArray(v) ? strings(v).join(' ')
+  : objs(v).length && (typeof v.value === 'string' || Array.isArray(v.value)) ? strings(v.value).join(' ') : undefined);
+const argsText = (layers) => firstDefined(layers, (l) => (Array.isArray(l.args) ? strings(l.args).join(' ') : undefined));
+const presentationOf = (l) => objs(l.presentation || l.terminal)[0] || {};
+
 /**
- * The command line and visibility VS Code would use on each OS: windows/osx/linux properties override the
- * task's own, which override the file's top-level ones. Each variant is judged on its own.
+ * What a task runs on one platform and whether that is hidden, merged the way VS Code merges it: the task's
+ * windows/osx/linux block over the task, then the file's (platform block over file) only to fill what the task
+ * leaves unset. A task with no command takes the file's command with the file's args before its own; a
+ * dependsOn-only task takes nothing. Values of the wrong type are skipped, as VS Code skips them.
  */
-function taskVariants(t, top) {
-  const out = [];
-  for (const os of [null, 'windows', 'osx', 'linux']) {
-    const o = os ? t[os] : null;
-    if (os && (!o || typeof o !== 'object')) continue;
-    const pick = (k) => (o && o[k] !== undefined ? o[k] : t[k] !== undefined ? t[k] : top[k]);
-    const cmd = [...strings(pick('command')), ...strings(pick('args'))].join(' ');
-    const p = { ...(top.presentation || {}), ...(t.presentation || {}), ...((o && o.presentation) || {}) };
-    const hidden = p.reveal === 'never' || p.echo === false || p.close === true || pick('hide') === true;
-    out.push({ os: os || 'all', cmd, hidden });
+function taskOn(t, root, os) {
+  const task = objs(t[os], t);
+  const file = objs(root[os], root);
+  let line = [];
+  const own = firstDefined(task, (l) => commandText(l.command));
+  const inherits = own === undefined && t.dependsOn == null;
+  if (own !== undefined) line = [own, argsText(task)];
+  else if (inherits) {
+    const cmd = firstDefined(file, (l) => commandText(l.command));
+    if (cmd !== undefined) line = [cmd, argsText(file), argsText(task)];
+  }
+  // Per layer, presentation (or legacy `terminal`) wins over legacy showOutput/echoCommand; enum values are case-insensitive.
+  const layers = own !== undefined || inherits ? [...task, ...file] : task;
+  const reveal = firstDefined(layers, (l) => { const p = presentationOf(l);
+    return typeof p.reveal === 'string' ? p.reveal : typeof l.showOutput === 'string' ? l.showOutput : undefined; });
+  const echo = firstDefined(layers, (l) => { const p = presentationOf(l);
+    return typeof p.echo === 'boolean' ? p.echo : typeof l.echoCommand === 'boolean' ? l.echoCommand : undefined; });
+  const close = firstDefined(layers, (l) => (typeof presentationOf(l).close === 'boolean' ? presentationOf(l).close : undefined));
+  // A task runs something itself if it has a command line or is a contributed type (npm, gulp, ...).
+  const runs = line.length > 0 || (typeof t.type === 'string' && !/^(shell|process)$/i.test(t.type));
+  const hidden = runs && (lower(reveal) === 'never' || echo === false || close === true);
+  return { cmd: line.filter(Boolean).join(' '), hidden };
+}
+
+/** The tasks VS Code loads on one platform: the top-level list, with same-named tasks replaced by the platform's list (2.0.0 flags that list as an error but still runs it). */
+function tasksOn(root, os) {
+  const local = taskList(root[os]);
+  const names = new Set(local.map(labelOf).filter((n) => n !== undefined));
+  return [...taskList(root).filter((t) => labelOf(t) === undefined || !names.has(labelOf(t))), ...local];
+}
+
+/** An object dependsOn reference ({ type, script, ... }) names every task whose fields all match it. */
+function refersTo(ref, t) {
+  let any = false;
+  for (const k in ref) { if (t[k] !== ref[k]) return false; any = true; }
+  return any;
+}
+
+/** Each distinct object reference in the file -> the tasks it names (any list), resolved once per file. */
+function objectRefTargets(all) {
+  const out = new Map();
+  for (const t of all) {
+    for (const ref of depRefs(t)) {
+      const key = objs(ref).length ? JSON.stringify(ref) : null;
+      if (key !== null && !out.has(key)) out.set(key, all.filter((d) => refersTo(ref, d)));
+    }
   }
   return out;
+}
+
+/**
+ * On one platform, every task that runs something dangerous itself or through dependsOn (VS Code runs those
+ * first): Map(task -> { culprit, why }). Dangerous tasks are walked back along dependsOn edges once.
+ */
+function dangerousOn(root, os, objTargets) {
+  const tasks = tasksOn(root, os);
+  const here = new Set(tasks);
+  const add = (map, k, t) => map.set(k, (map.get(k) || new Set()).add(t));
+  // Dependents of a name (label or identifier), and of a task named by an object reference.
+  const byName = new Map();
+  const byTask = new Map();
+  for (const t of tasks) {
+    for (const ref of depRefs(t)) {
+      if (typeof ref === 'string') add(byName, ref, t);
+      else if (objs(ref).length) for (const d of objTargets.get(JSON.stringify(ref))) if (here.has(d)) add(byTask, d, t);
+    }
+  }
+  const hit = new Map();
+  const queue = [];
+  for (const t of tasks) {
+    const { cmd, hidden } = taskOn(t, root, os);
+    const why = dangers(cmd, hidden);
+    if (why.length) { hit.set(t, { culprit: t, why }); queue.push(t); }
+  }
+  const walked = new Set(); // names already walked back: their dependents are all marked
+  for (let i = 0; i < queue.length; i++) {
+    const d = queue[i];
+    const names = [labelOf(d), d.identifier].filter((k) => typeof k === 'string' && !walked.has(k));
+    names.forEach((k) => walked.add(k));
+    for (const from of [...names.map((k) => byName.get(k)), byTask.get(d)]) {
+      for (const p of from || []) if (!hit.has(p)) { hit.set(p, hit.get(d)); queue.push(p); }
+    }
+  }
+  return { tasks, hit };
 }
 
 /** Reasons a folder-open command line is dangerous (empty = an ordinary auto-start task). */
@@ -167,9 +268,9 @@ function ignoredTools(line) {
  * that random binary cannot trip, false = nothing to score (a .gitignore).
  */
 function scanArtifacts(file, content) {
-  const f = norm(file);
-  const ext = path.extname(f).toLowerCase();
-  const b = base(f);
+  const f = norm(file).toLowerCase();
+  const ext = path.extname(f);
+  const b = base(file);
   const findings = [];
   const add = (severity, ruleId, message, line = 0) =>
     findings.push({ file, line, score: severity === 'critical' ? 100 : 40, severity, ruleId, message });
@@ -189,7 +290,7 @@ function scanArtifacts(file, content) {
     return { findings, scanText: true };
   }
 
-  if (b === '.gitignore') {
+  if (b.toLowerCase() === '.gitignore') {
     content.split('\n').forEach((l, i) => {
       const hit = ignoredTools(l);
       if (hit.length) add('critical', 'push-tool-ignored', `.gitignore hides the PolinRider push tool (${l.trim()} matches ${hit.join(', ')})`, i + 1);
@@ -213,24 +314,46 @@ function scanArtifacts(file, content) {
 
   if (isTasks) {
     const root = doc && (ext === '.code-workspace' ? doc.tasks : doc);
-    if (root && typeof root === 'object') {
-      for (const t of Array.isArray(root.tasks) ? root.tasks : []) {
-        if (!t || typeof t !== 'object' || !t.runOptions || t.runOptions.runOn !== 'folderOpen') continue;
-        const label = t.label || t.taskName || t.script || '(unnamed)';
-        const bad = taskVariants(t, root).map((v) => ({ v, why: dangers(v.cmd, v.hidden) })).filter((x) => x.why.length);
-        if (bad.length) {
-          const { v, why } = bad[0];
-          add('critical', 'vscode-autorun', `task "${label}" runs automatically on folder open and ${why.join(', ')}` +
-            (v.os === 'all' ? '' : ` (on ${v.os})`));
-        } else add('warning', 'vscode-autorun', `task "${label}" runs automatically on folder open (runOn: folderOpen); verify it is intended`);
+    if (doc == null) {
+      if (/"runOn"\s*:\s*"(?:folderOpen|worktreeCreated)"/i.test(flat)) {
+        // Unparseable file: judge it as a whole rather than miss it.
+        const cmds = (flat.match(/"(?:command|args)"\s*:\s*(?:\[(?:[^\]"]|"(?:[^"\\]|\\.)*")*\]|"(?:[^"\\]|\\.)*")/g) || [])
+          .join(' ').replace(/\\?"/g, ' ');
+        const why = dangers(cmds, /"(?:reveal|showOutput)"\s*:\s*"never"|"(?:echo|echoCommand)"\s*:\s*false|"close"\s*:\s*true/i.test(flat));
+        add(why.length ? 'critical' : 'warning', 'vscode-autorun',
+          `task file does not parse as JSONC and has an auto-run task${why.length ? ' that ' + why.join(', ') : ''}`);
       }
-    } else if (/"runOn"\s*:\s*"folderOpen"/.test(flat)) {
-      // Unparseable file: judge it as a whole rather than miss it.
-      const cmds = (flat.match(/"(?:command|args)"\s*:\s*(?:\[(?:[^\]"]|"(?:[^"\\]|\\.)*")*\]|"(?:[^"\\]|\\.)*")/g) || [])
-        .join(' ').replace(/\\?"/g, ' ');
-      const why = dangers(cmds, /"reveal"\s*:\s*"never"|"echo"\s*:\s*false|"hide"\s*:\s*true|"close"\s*:\s*true/.test(flat));
-      add(why.length ? 'critical' : 'warning', 'vscode-autorun',
-        `task file does not parse as JSONC and has a folder-open task${why.length ? ' that ' + why.join(', ') : ''}`);
+    } else if (objs(root).length) {
+      const all = [root, ...PLATFORMS.map((os) => root[os])].flatMap(taskList);
+      const refs = all.reduce((n, t) => n + depRefs(t).length, 0);
+      if (all.length > MAX_TASKS || refs > MAX_REFS) {
+        add('critical', 'vscode-autorun', `task file has ${all.length} tasks and ${refs} dependsOn references, more than ` +
+          `polin-guard analyses (${MAX_TASKS} / ${MAX_REFS}); review it by hand`);
+      } else {
+        // Judge every unattended task on each platform, with what it depends on; report each task once.
+        const results = new Map();
+        const objTargets = objectRefTargets(all);
+        for (const os of PLATFORMS) {
+          const { tasks, hit } = dangerousOn(root, os, objTargets);
+          for (const t of tasks) {
+            const trigger = autoTrigger(t);
+            if (!trigger) continue;
+            if (!results.has(t)) results.set(t, { trigger, hits: [] });
+            if (hit.has(t)) results.get(t).hits.push({ os, ...hit.get(t) });
+          }
+        }
+        for (const [t, { trigger, hits }] of results) {
+          const label = labelOf(t) || (typeof t.script === 'string' ? t.script : '(unnamed)');
+          if (!hits.length) {
+            add('warning', 'vscode-autorun', `task "${label}" runs automatically on ${trigger}; verify it is intended`);
+            continue;
+          }
+          const { culprit, why } = hits[0];
+          const via = culprit === t ? '' : `, through dependsOn task "${labelOf(culprit) || '(unnamed)'}",`;
+          const where = hits.length === PLATFORMS.length ? '' : ` (on ${hits.map((h) => h.os).join(', ')})`;
+          add('critical', 'vscode-autorun', `task "${label}" runs automatically on ${trigger} and${via} ${why.join(', ')}${where}`);
+        }
+      }
     }
   }
   return { findings, scanText: true };
