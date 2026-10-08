@@ -1,7 +1,7 @@
-<h1 align="center">🛡️ polin-guard</h1>
+<h1 align="center">polin-guard</h1>
 
 <p align="center">
-  <strong>Stop obfuscated malware from being committed to your repo — automatically, on every commit.</strong>
+  <strong>Stop obfuscated malware from being committed to your repo, automatically, on every commit.</strong>
 </p>
 
 <p align="center">
@@ -83,7 +83,7 @@ many lines** or **fetched at runtime** still trips the score.
 
 **Block at score ≥ 70, warn at ≥ 35** (configurable). Because the signals are
 independent, evading one (rename, split, runtime-fetch, drop the padding) still
-trips the others — so evasion becomes self-defeating: visible in review, inert,
+trips the others, so evasion becomes self-defeating: visible in review, inert,
 readable, or capability-less. Lockfiles, minified bundles, source maps, and
 `node_modules` are skipped to keep false positives near zero.
 
@@ -221,9 +221,9 @@ non-zero on any `critical` finding so your hook or CI step fails.
 
 ## Links
 
-- 📦 **npm:** https://www.npmjs.com/package/polin-guard
+-  **npm:** https://www.npmjs.com/package/polin-guard
 - 🐙 **GitHub:** https://github.com/Valentin-Shyaka/polin-guard
-- 🐛 **Issues:** https://github.com/Valentin-Shyaka/polin-guard/issues
+-  **Issues:** https://github.com/Valentin-Shyaka/polin-guard/issues
 - 🔒 **Security policy:** [SECURITY.md](SECURITY.md)
 - 🤝 **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
