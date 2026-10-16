@@ -2,5 +2,5 @@ node_modules/
 *.log
 .DS_Store
 .idea/
-.vscode/
 npm-debug.log*
+config.bat
